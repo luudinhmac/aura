@@ -13,6 +13,8 @@ reports/
 *.crt
 uploads/
 .agent
+.agents/
+.vscode/
 .aistudio/
 .codegraph/
 /prisma/client/

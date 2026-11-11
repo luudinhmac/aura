@@ -176,18 +176,28 @@ Màn hình: [`RevenueManagementView.tsx`](../src/views/RevenueManagementView.tsx
 
 API chính: `revenue`, `revenue-categories`, `revenue-platforms`, `revenue-transactions`, `company-expenses`, `finance`.
 
-### 9. Quản trị hệ thống, đơn vị và phân quyền
+### 9. Phê duyệt nhân sự & nghỉ phép
 
-Màn hình: [`AdminPortalView.tsx`](../src/views/AdminPortalView.tsx).
+Màn hình: [`ApprovalCenterView.tsx`](../src/views/ApprovalCenterView.tsx).
 
+- Tách riêng khỏi `Quản Trị Hệ Thống` thành phân hệ độc lập (`'approvals'`) nằm trong nhóm điều hướng `Hồ Sơ` trên cả `AppSidebarShell` và `Navbar`.
+- Gồm 2 sub-tab nghiệp vụ: `Duyệt Nghỉ Phép` (phân cấp tự động / trưởng phòng / Giám Đốc theo số ngày nghỉ) và `Duyệt Yêu Cầu` (thêm/cập nhật/xóa hồ sơ nhân sự từ cấp dưới).
+- Cho phép cấp quyền riêng qua tab permission `'approvals'` (`Phê Duyệt Nhân Sự & Nghỉ Phép`) hoặc hành động `manage_approvals` / vai trò `director` mà không mở quyền vào `Quản Trị Hệ Thống` (`'admin'`).
+
+### 10. Quản trị hệ thống, đơn vị và phân quyền
+
+Màn hình: [`AdminPortalView.tsx`](../src/views/AdminPortalView.tsx), [`AdminAuditLogPanel.tsx`](../src/components/AdminAuditLogPanel.tsx).
+
+- Chỉ chứa 8 tab quản trị hệ thống chia thành 3 nhóm (`1. Tài khoản & Bảo mật`: `Tài Khoản & RBAC`, `Nhật Ký Hệ Thống`; `2. Danh mục & Tổ chức`: `Cơ Cấu Đơn Vị`, `Loại Nhân Sự`, `Trạng Thái`, `Hiển Thị Cột & Trường`; `3. Cấu hình & Đánh giá`: `Tiêu Chí Đánh Giá`, `Thiết Lập Hệ Thống`).
 - Quản lý phòng ban cấp 1, nhóm/team trực thuộc, loại nhân sự, trạng thái, tiêu chí và thiết lập hệ thống.
 - Gán nhân sự vào đơn vị/nhóm và hiển thị các chỉ số đếm từ dữ liệu hiện có.
 - Quản lý role, quyền xem theo đơn vị và quyền thao tác; quyền được kiểm tra ở cả frontend và backend.
 - Tài khoản gốc `admin` luôn giữ toàn quyền, không thể bị xóa hoặc hạ quyền qua UI/API. Các tài khoản khác có thể được promote/demote theo quyền của người thực hiện.
 - `System Admin`/`superadmin` phải được thể hiện thống nhất: role là nguồn phân quyền; nhãn hiển thị không được tạo ra một cấu hình quyền thứ hai gây mâu thuẫn.
 - Các nút xóa loại nhân sự, đơn vị, nhóm, tiêu chí và cấu hình phải hiển thị xác nhận/hủy trước khi thực hiện; server vẫn kiểm tra ràng buộc và không phụ thuộc vào confirm của trình duyệt.
+- Tab phụ `Nhật Ký Hệ Thống` (`audit_logs`, chỉ Super Admin) hiển thị bản ghi `AuditLog` phân trang từ PostgreSQL kèm lọc theo từ khóa (`path`, tài nguyên, `requestId`, người thao tác), phương thức HTTP, tài nguyên và modal xem metadata JSON.
 
-API chính: `departments`, `personnel-types`, `statuses`, `settings`, `roles`, `users`, `permissions`, `columns`.
+API chính: `departments`, `personnel-types`, `statuses`, `settings`, `roles`, `users`, `permissions`, `columns`, `admin/audit-logs`.
 
 ### 10. Xác thực, session và audit
 
@@ -351,3 +361,55 @@ Sau mỗi lần sửa code hoặc thêm tính năng:
 - Danh sách nhân sự không hiển thị banner mô tả phạm vi truy cập; việc lọc theo đơn vị và phân quyền dữ liệu vẫn được giữ nguyên.
 - Task creation uses Idol-category-aware task categories: performance/PK, gaming/gear, and live-commerce Idols receive relevant category choices instead of one universal list. KPI activity choices are filtered by the selected task category, while unassigned KPI remains available for non-KPI work.
 - Task creation and update are validated server-side against the Idol category and selected KPI activity, so an invalid task-category/activity pairing cannot be saved through a direct API request.
+
+## Kiểm soát truy cập API, đối soát lương và tối ưu upload (2026-11-11)
+
+- Bảo vệ RBAC cho các endpoint đọc dữ liệu nhạy cảm trong `routePolicies` (`server/auth/authorization.ts`):
+  - `GET /api/approvals` yêu cầu một trong các quyền `manage_approvals`, `manage_criteria`, `manage_settings`.
+  - Các route `GET /api/payrolls*` yêu cầu một trong các quyền `manage_payroll`, `adjust_payroll`, `approve_payroll`, `hot_bonus` (ngoại trừ `GET /api/payrolls/my-payslips/:userId`).
+  - Các route `GET /api/finance/*` yêu cầu `adjust_payroll`, `manage_payroll`, `approve_payroll` hoặc `manage_revenue`.
+  - Các route `GET /api/revenue/*` yêu cầu `manage_revenue`, `adjust_payroll`, `manage_payroll` hoặc `approve_payroll`.
+  - Các route `GET /api/service-usage/accounting` và `GET /api/service-usage` yêu cầu quyền tài chính/dịch vụ tương ứng; `POST /api/upload`, `GET /api/idols/:id/salary-history`, và `GET /api/payrolls/my-payslips/:userId` yêu cầu xác thực (`action: undefined`) và kiểm tra quyền/sở hữu tại handler.
+- Kiểm tra quyền sở hữu (anti-IDOR) tại `server.ts`:
+  - `GET /api/payrolls/my-payslips/:userId` chặn truy cập phiếu lương của người dùng khác (`403`) trừ khi người gọi có quyền bảng lương (`manage_payroll`, `adjust_payroll`, `approve_payroll`, `hot_bonus`).
+  - `GET /api/idols/:id/salary-history` yêu cầu người gọi là chính Idol sở hữu hồ sơ (`personnel.userId === requestUser.id`) hoặc có quyền bảng lương.
+  - `PUT /api/auth/profile` bắt buộc có `requestUser` (`401`), từ chối khi `req.body.userId` khác `requestUser.id` (`403`), và luôn cập nhật theo `requestUser.id`.
+- Logic nghiệp vụ & kế toán trong `server/db/pgStore.ts` và `src/utils/payrollDeductions.ts`:
+  - `approveApproval` hỗ trợ thực thi nhánh `'update_idol'` bằng cách gọi `this.updateIdol` trong transaction.
+  - `getPayrollRecords` áp dụng bộ lọc `filter.userId` qua `personnel.userId`.
+  - `recalculatePayrollRecordFinancials` chuẩn hóa việc tính lại `totalGross` (đầy đủ 9 khoản thu nhập gồm `allowance`, `workAssignmentPay`, `otherBonus`), khấu trừ PIT/BHXH, `netSalary`, `companyInsurance` và `companyLaborCost` cho cả `adjustPayrollRecord` và `syncRevenueToPayroll`; `syncRevenueToPayroll` chạy trong `prisma.$transaction`.
+  - `getFinancePnLSummary` và `getFinanceTrendSeries` lấy kỳ mặc định từ `getEffectiveSystemDate()` (`YYYY-MM`) thay vì chuỗi cứng, và cộng `CompanyExpense(category='LABOR_INSURANCE')` vào `totalCompanyLaborCost` để `officeLaborCost` và `totalOpEx` khớp với `expenses.companyInsurancePaid`.
+- Hiệu năng & bảo mật upload (`POST /api/upload` trong `server.ts`): thay thế quét thư mục đồng bộ `fs.readdirSync`/`fs.readFileSync` bằng chỉ mục SHA-256 bất đồng bộ khởi tạo lười (`getUploadHashIndex`), kiểm tra phần mở rộng hợp lệ và magic bytes ảnh (`hasValidImageSignature`), và ghi tệp bất đồng bộ (`fs.promises.writeFile`).
+
+## Dual-Shell Navigation, Tương Phản Dark Mode và Audit Log Viewer (2026-11-11)
+
+- **Chuyển đổi bố cục Dual-Shell (`sidebar` ↔ `classic`) trong [`App.tsx`](../src/App.tsx)**:
+  - Mặc định sử dụng shell mới [`AppSidebarShell.tsx`](../src/components/AppSidebarShell.tsx) (thanh bên thu gọn được, thanh trên gọn, ngăn kéo di động, tìm kiếm toàn hệ thống `#sidebar-universal-search` với phím tắt `Ctrl+K`, thông báo cá nhân, chuyển giao diện Sáng/Tối và menu tài khoản).
+  - Cho phép chuyển đổi trực tiếp giữa giao diện mới và [`Navbar.tsx`](../src/components/Navbar.tsx) cổ điển (`Giao diện Cũ` ↔ `Giao diện Mới`), lưu lựa chọn vào `localStorage` (`aura_ui_shell`) mà không mất phiên đăng nhập hay tab đang mở.
+  - Hợp nhất logic phân quyền menu (`buildNavGroups`, `canAccessNavTab`, `getHomeNavTab`, `canViewSystemSettings`) trong [`navigationConfig.ts`](../src/utils/navigationConfig.ts) dùng chung cho cả hai shell.
+- **API & Giao diện Audit Log (`GET /api/admin/audit-logs`)**:
+  - `server/db/pgStore.ts` (`pgStore.getAuditLogs`) truy vấn bảng `audit_logs` kèm thông tin người thực hiện (`actorUser.personnelProfile` / `roleTitle` / `username`), phân trang và lọc `search`, `method`, `resource`, `statusCode`.
+  - Bảo vệ chỉ Super Admin qua `requireSuperAdmin` trong `server.ts` và policy `{ methods: ['GET'], pattern: /^\/admin\/audit-logs$/, superAdminOnly: true }` trong `server/auth/authorization.ts`; frontend khóa sub-tab `'audit_logs'` trong `src/utils/adminAccess.ts` và `AdminPortalView.tsx`, kết nối qua [`AdminAuditLogPanel.tsx`](../src/components/AdminAuditLogPanel.tsx) và `api.getAuditLogs`.
+- **Sửa tương phản Dark Mode & Accessibility**:
+  - [`src/index.css`](../src/index.css) bổ sung override Dark Mode cho `bg-rose-200`, `bg-rose-200/80` và `text-rose-900/80` để đảm bảo độ tương phản trên thẻ KPI tài chính và badge.
+  - Gắn đủ `id`, `name`, `label[for]` và `aria-label` cho các trường tìm kiếm/lọc mới (`#sidebar-universal-search`, `#classic-universal-search`, `#audit-log-search`, `#audit-log-method`, `#audit-log-resource`).
+
+## Chuẩn Hóa Quản Trị Hệ Thống, Đồng Bộ 15/15 Quyền RBAC và Bảo Vệ Trạng Thái (2026-11-11)
+
+- **Danh mục phân quyền dùng chung ([`permissionCatalog.ts`](../src/utils/permissionCatalog.ts))**:
+  - Hợp nhất `TAB_PERMISSION_OPTIONS` (**15** `AppTabPermission`) và `ACTION_PERMISSION_OPTIONS` (**15** `AppActionPermission`, phân 4 nhóm chức năng) dùng chung cho cả ma trận vai trò trong [`RoleBasedPermissionManager.tsx`](../src/components/RoleBasedPermissionManager.tsx) (kèm tìm kiếm nhanh `#rbac-perm-search`) và modal tài khoản trong [`AdminPortalView.tsx`](../src/views/AdminPortalView.tsx), khắc phục lỗi lệch số đếm `15/12 quyền`.
+- **Bảo vệ toàn vẹn khi xóa Trạng Thái nhân sự**:
+  - [`pgStore.deleteStatus`](../server/db/pgStore.ts) kiểm tra `prisma.personnel.count({ where: { status } })` và từ chối xóa nếu còn hồ sơ đang sử dụng (`400 Bad Request` kèm thông báo cụ thể); UI trong [`AdminPortalView.tsx`](../src/views/AdminPortalView.tsx) khóa nút xóa khi `count > 0` và yêu cầu xác nhận khi `count === 0`.
+- **Tái cấu trúc 10 tab trong `AdminPortalView` & Nâng cấp `AdminAuditLogPanel`**:
+  - Phân rõ 4 nhóm có nhãn trên thanh điều hướng phụ (`1. Phê duyệt & Quy trình`, `2. Tài khoản & Bảo mật`, `3. Danh mục & Tổ chức`, `4. Cấu hình & Đánh giá`), đổi nhãn `Hiển Thị Cột & Trường` và bổ sung huy hiệu phạm vi ảnh hưởng trên 3 khối của `Thiết Lập Hệ Thống`.
+  - Mở rộng `pgStore.getAuditLogs` và [`AdminAuditLogPanel.tsx`](../src/components/AdminAuditLogPanel.tsx) thêm lọc phân loại (`all` / `data` / `auth`), nhóm trạng thái HTTP (`2xx` / `4xx_5xx`), khoảng ngày (`fromDate` / `toDate`) và nút `Xuất CSV`.
+
+## Tách Phê Duyệt Nhân Sự & Nghỉ Phép Khỏi Quản Trị Hệ Thống (2026-11-11)
+
+- **Phân hệ độc lập [`ApprovalCenterView.tsx`](../src/views/ApprovalCenterView.tsx) (`tab = 'approvals'`)**:
+  - Chuyển toàn bộ quy trình `Duyệt Nghỉ Phép` và `Duyệt Yêu Cầu` ra khỏi [`AdminPortalView.tsx`](../src/views/AdminPortalView.tsx) sang màn hình chuyên trách cho HR / Ban Giám Đốc / Quản lý, đặt trong nhóm điều hướng `Hồ Sơ` (`Phê Duyệt Nhân Sự` kèm huy hiệu đếm chờ duyệt) đồng bộ trên cả [`AppSidebarShell.tsx`](../src/components/AppSidebarShell.tsx) và [`Navbar.tsx`](../src/components/Navbar.tsx) thông qua [`navigationConfig.ts`](../src/utils/navigationConfig.ts).
+- **Thu gọn [`AdminPortalView.tsx`](../src/views/AdminPortalView.tsx) (`tab = 'admin'`)**:
+  - Chỉ giữ 8 sub-tab quản trị hệ thống trong 3 nhóm (`1. Tài khoản & Bảo mật`, `2. Danh mục & Tổ chức`, `3. Cấu hình & Đánh giá`).
+- **Tách quyền truy cập & Nâng danh mục Tab lên 16 mục**:
+  - Bổ sung `'approvals'` vào `AppTabPermission` ([`src/types/index.ts`](../src/types/index.ts)) và `TAB_PERMISSION_OPTIONS` ([`permissionCatalog.ts`](../src/utils/permissionCatalog.ts), tổng **16** tab / **15** action).
+  - [`adminAccess.ts`](../src/utils/adminAccess.ts) cung cấp `canAccessApprovalCenter(user)` (cho `isSuperAdmin`, `director`, tab `'approvals'` hoặc action `manage_approvals`) và thu hẹp `canAccessAdminPortal(user)` chỉ dành cho `isSuperAdmin` hoặc người có quyền cấu hình hệ thống (`manage_settings`, `manage_departments`, `manage_criteria`). Tài khoản `hr_admin` chỉ có `manage_approvals` sẽ không thấy nhóm/nút `Hệ Thống` hay `Quản Trị`.

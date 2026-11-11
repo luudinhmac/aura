@@ -120,7 +120,7 @@ const RoleDashboardView: React.FC<RoleDashboardViewProps> = (props) => {
   const { currentUser, idols, schedules, scores, tasks, leaveRequests, payrollPeriods = [], payrollDisputeCount = 0, users = [], approvals = [], onNavigateToTab, referenceDate, workAssignments, onCreateWorkAssignment, onUpdateWorkAssignment, onRespondWorkAssignment, onCompleteWorkAssignment, onReviewWorkAssignmentViolation, onCancelWorkAssignment, onRequestWorkAssignmentWaiver, onReviewWorkAssignmentWaiver } = props;
   const canManagePersonnel = currentUser.isSuperAdmin || currentUser.allowedActions?.includes('manage_idols') === true;
   const canViewPayroll = currentUser.isSuperAdmin || currentUser.allowedActions?.some((action) => ['manage_payroll', 'adjust_payroll', 'approve_payroll'].includes(action)) === true;
-  const canViewApprovals = currentUser.isSuperAdmin || currentUser.allowedTabs?.includes('admin') === true;
+  const canViewApprovals = currentUser.isSuperAdmin || currentUser.role === 'director' || currentUser.allowedTabs?.includes('approvals') === true || currentUser.allowedActions?.includes('manage_approvals') === true;
   const [focusFilter, setFocusFilter] = useState<FocusFilter>('all');
   const [showProfileIssues, setShowProfileIssues] = useState(true);
   const [showServiceUsage, setShowServiceUsage] = useState(true);
@@ -232,11 +232,11 @@ const RoleDashboardView: React.FC<RoleDashboardViewProps> = (props) => {
       return approvals
         .filter((approval) => approval.status === 'pending')
         .slice(0, 5)
-        .map((approval) => ({ id: approval.id, title: approval.targetName, status: 'Chờ phê duyệt', category: 'personnel', tab: canViewApprovals ? 'admin' : undefined }));
+        .map((approval) => ({ id: approval.id, title: approval.targetName, status: 'Chờ phê duyệt', category: 'personnel', tab: canViewApprovals ? 'approvals' : undefined }));
     }
     if (persona === 'hr_finance') {
       const items = [
-        ...(canViewApprovals ? pendingLeaves.slice(0, 3).map((request) => ({ id: request.id, title: `${request.idolName} · Đơn nghỉ phép`, status: 'Chờ xử lý', category: 'personnel' as const, tab: 'admin' })) : []),
+        ...(canViewApprovals ? pendingLeaves.slice(0, 3).map((request) => ({ id: request.id, title: `${request.idolName} · Đơn nghỉ phép`, status: 'Chờ xử lý', category: 'personnel' as const, tab: 'approvals' })) : []),
         ...(canManagePersonnel ? pendingPersonnel.slice(0, 2).map((idol) => ({ id: `pending-${idol.id}`, title: `${idol.stageName || idol.realName} · Hồ sơ chờ duyệt`, status: 'Chờ duyệt', category: 'personnel' as const, tab: 'roster' })) : []),
         ...(canManagePersonnel && profileDataIssues.length > 0 ? [{ id: 'profile-data-issues', title: `${incompleteProfiles.length} hồ sơ thiếu · ${mismatchedProfiles.length} hồ sơ lệch dữ liệu`, status: 'Cần kiểm tra', category: 'personnel' as const, tab: 'roster' }] : []),
         ...(resignedWithSchedules.length > 0 ? [{ id: 'resigned-schedules', title: `${resignedWithSchedules.length} hồ sơ còn lịch sau ngày nghỉ`, status: 'Ưu tiên', category: 'personnel' as const, tab: 'schedule' }] : []),
@@ -323,7 +323,7 @@ const RoleDashboardView: React.FC<RoleDashboardViewProps> = (props) => {
       ]
     : persona === 'director'
       ? [
-          { label: 'Phê duyệt', description: 'Xem yêu cầu cần quyết định', icon: <ShieldCheck className="h-4 w-4" />, tab: 'admin' },
+          { label: 'Phê duyệt', description: 'Xem yêu cầu cần quyết định', icon: <ShieldCheck className="h-4 w-4" />, tab: 'approvals' },
           { label: 'Danh sách nhân sự', description: 'Theo dõi toàn bộ nhân sự trong phạm vi', icon: <Users className="h-4 w-4" />, tab: 'roster' },
           { label: 'Lịch làm việc', description: 'Theo dõi lịch vận hành toàn công ty', icon: <CalendarClock className="h-4 w-4" />, tab: 'schedule' }
         ]

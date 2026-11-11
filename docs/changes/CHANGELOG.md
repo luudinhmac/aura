@@ -1,6 +1,60 @@
 # NHẬT KÝ THAY ĐỔI (CHANGELOG)
 ## Dự Án Aura Talent Management
 
+### [2026-11-11] - Tách Phê Duyệt Nhân Sự & Nghỉ Phép khỏi Quản Trị Hệ Thống
+
+- **Màn hình Phê Duyệt độc lập (`src/views/ApprovalCenterView.tsx`, `src/App.tsx`, `src/views/RoleDashboardView.tsx`)**:
+  - Tạo `ApprovalCenterView` chứa 2 phân hệ nghiệp vụ `Duyệt Nghỉ Phép` và `Duyệt Yêu Cầu` (kèm 2 thẻ đếm chờ duyệt, bộ lọc và 3 modal duyệt/chi tiết).
+  - Bổ sung lazy-load route `'approvals'` trong `src/App.tsx`, nạp `approvals` & `leaveRequests` cho người có quyền `canAccessApprovalCenter` và cập nhật liên kết điều hướng nhanh trên `RoleDashboardView.tsx`.
+- **Thu gọn Quản Trị Hệ Thống (`src/views/AdminPortalView.tsx`)**:
+  - Gỡ bỏ `leave_management` và `approvals` khỏi `AdminPortalView`; giữ lại 8 sub-tab hệ thống trong 3 nhóm (`1. Tài khoản & Bảo mật`, `2. Danh mục & Tổ chức`, `3. Cấu hình & Đánh giá`) cùng điều kiện hiển thị nhất quán với `canAccessAdminSubTab`.
+- **Phân quyền & Điều hướng dùng chung (`src/types/index.ts`, `src/types/roles.ts`, `src/utils/adminAccess.ts`, `src/utils/permissionCatalog.ts`, `src/utils/navigationConfig.ts`, `src/components/Navbar.tsx`, `src/components/RolePermissionModal.tsx`)**:
+  - Thêm `'approvals'` vào `AppTabPermission` / `NavTab` / `TAB_PERMISSION_OPTIONS` (nâng tổng danh mục tab lên 16 mục) và preset vai trò phù hợp.
+  - Bổ sung `canAccessApprovalCenter` và tách `canAccessAdminPortal` chỉ yêu cầu `isSuperAdmin` hoặc quyền cấu hình hệ thống (`manage_settings`, `manage_departments`, `manage_criteria`).
+  - Thêm `Phê Duyệt Nhân Sự` vào nhóm `Hồ Sơ` trong `navigationConfig.ts` (đồng bộ Sidebar mới & Navbar cổ điển) và tách nút `Quản Trị` khỏi số đếm phê duyệt trên Navbar.
+- **Test & Xác minh (`test/permissionCatalog.test.ts`, `test/authorization.test.ts`)**: cập nhật test cho 16 tab permission và quy tắc tách quyền `canAccessApprovalCenter` vs `canAccessAdminPortal`; `tsc --noEmit`, unit tests, `vite build` và Playwright trên `http://localhost:3001/` đều đạt.
+
+### [2026-11-11] - Chuẩn hóa Quản Trị Hệ Thống, đồng bộ 15/15 quyền RBAC và nâng cấp Audit Log (Nhóm 4)
+
+- **`src/utils/permissionCatalog.ts`, `src/components/RoleBasedPermissionManager.tsx`, `src/views/AdminPortalView.tsx`**:
+  - Tạo `TAB_PERMISSION_OPTIONS` (15 tabs) và `ACTION_PERMISSION_OPTIONS` (15 actions phân 4 nhóm) dùng chung cho cả ma trận vai trò và modal sửa tài khoản cá nhân; bổ sung tìm kiếm nhanh `#rbac-perm-search` và `#rbac-role-search`.
+  - Tái cấu trúc 10 sub-tab trong `AdminPortalView` thành 4 nhóm có tiêu đề (`1. Phê duyệt & Quy trình`, `2. Tài khoản & Bảo mật`, `3. Danh mục & Tổ chức`, `4. Cấu hình & Đánh giá`), đổi nhãn `Hiển Thị Cột & Trường` và thêm huy hiệu phạm vi cho 3 khối trong `Thiết Lập Hệ Thống`.
+- **`server/db/pgStore.ts`, `server.ts`, `src/services/api.ts`, `src/components/AdminAuditLogPanel.tsx`**:
+  - Chặn `pgStore.deleteStatus` khi trạng thái đang được `Personnel` sử dụng; trả thông báo lỗi rõ qua `DELETE /api/statuses/:name`, vô hiệu hóa nút xóa trên UI khi `count > 0` và xác nhận bằng `confirmDialog`.
+  - Bổ sung tham số lọc `category` (`all` | `data` | `auth`), `statusGroup` (`all` | `2xx` | `4xx_5xx`), `fromDate`, `toDate` cho `pgStore.getAuditLogs` / `/api/admin/audit-logs` / `api.getAuditLogs` và nút `Xuất CSV` trên `AdminAuditLogPanel`.
+- **Test (`test/permissionCatalog.test.ts`, `test/auditLog.test.ts`)**: bổ sung unit test cho danh mục quyền 15/15, lọc `AuditLog` và chặn xóa `Status` đang sử dụng; `tsc --noEmit`, `134/134` tests, `vite build` và Playwright đều đạt.
+
+### [2026-11-11] - Kết nối Dual-Shell Sidebar UI, bổ sung Audit Log Viewer và sửa tương phản Dark Mode (Nhóm 3)
+
+- **Navigation dùng chung & Dual-Shell (`src/utils/navigationConfig.ts`, `src/components/AppSidebarShell.tsx`, `src/components/Navbar.tsx`, `src/App.tsx`)**:
+  - Tách cấu hình nhóm menu và kiểm tra quyền tab (`buildNavGroups`, `canAccessNavTab`, `getHomeNavTab`, `canViewSystemSettings`) sang module dùng chung `src/utils/navigationConfig.ts`.
+  - Tạo `AppSidebarShell` (collapsible sidebar, slim topbar, mobile drawer, Universal Search `#sidebar-universal-search` + `Ctrl+K`, thông báo, đổi giao diện Sáng/Tối, menu cá nhân) làm bố cục mặc định khi mở app.
+  - Giữ [`Navbar.tsx`](../../src/components/Navbar.tsx) làm chế độ `classic` và thêm nút chuyển 2 chiều `Giao diện Cũ` ↔ `Giao diện Mới` (lưu `localStorage.getItem('aura_ui_shell')`) trong `src/App.tsx`.
+- **Audit Log API & UI (`server/db/pgStore.ts`, `server/auth/authorization.ts`, `server.ts`, `src/types/index.ts`, `src/services/api.ts`, `src/utils/adminAccess.ts`, `src/components/AdminAuditLogPanel.tsx`, `src/views/AdminPortalView.tsx`)**:
+  - Thêm `pgStore.getAuditLogs` phân trang/lọc bản ghi `AuditLog` từ PostgreSQL; đăng ký policy `superAdminOnly` và route `GET /api/admin/audit-logs` (`requireSuperAdmin`).
+  - Thêm `'audit_logs'` vào `AdminSubTab`, phương thức `api.getAuditLogs`, component `AdminAuditLogPanel` (bảng, lọc search/method/resource, phân trang, modal xem JSON metadata đóng bằng `Escape`) và sub-tab `Nhật Ký Hệ Thống` chỉ hiển thị với `currentUser.isSuperAdmin`.
+- **Dark Mode, Accessibility & Test (`src/index.css`, `test/auditLog.test.ts`, `test/authorization.test.ts`)**:
+  - Bổ sung dark-mode override cho `bg-rose-200`, `bg-rose-200/80` và `text-rose-900/80` trong `src/index.css`; bổ sung `id`/`name`/`label[for]`/`aria-label` cho ô tìm kiếm/bộ lọc.
+  - Bổ sung assertions cho `pgStore.getAuditLogs`, `canAccessAdminSubTab(..., 'audit_logs')` và route policy `/admin/audit-logs`; `tsc --noEmit`, `132/132` tests, `vite build` và Playwright A/B verification đạt.
+
+### [2026-11-11] - Gỡ `.vscode/` và `.agents/` khỏi repository & lịch sử Git
+
+- Loại bỏ `.vscode/` và `.agents/` khỏi toàn bộ lịch sử commit bằng `git-filter-repo` (giữ bản sao chỉ ở local).
+- Bổ sung `.agents/` và `.vscode/` vào `.gitignore`; xóa pattern `\.agents/|\.vscode/` khỏi bộ lọc `changes` trong `.gitlab-ci.yml`.
+
+### [2026-11-11] - Siết RBAC/IDOR, sửa logic đối soát lương/duyệt hồ sơ/P&L và tối ưu upload (Nhóm 1 & 2)
+
+- **`server/auth/authorization.ts`**: Thêm helper `hasAnyAction`; bổ sung policy bảo vệ các route `GET` nhạy cảm (`/api/approvals`, `/api/payrolls*`, `/api/finance/*`, `/api/revenue/*`, `/api/service-usage`, `/api/service-usage/accounting`) và cho phép mọi tài khoản đăng nhập gọi `POST /api/upload`, `GET /api/idols/:id/salary-history`, `GET /api/payrolls/my-payslips/:userId` để handler kiểm tra quyền sở hữu.
+- **`server.ts`**: Bổ sung kiểm tra `401`/`403` chống IDOR cho `GET /api/idols/:id/salary-history`, `PUT /api/auth/profile` và `GET /api/payrolls/my-payslips/:userId`; gỡ fallback `'2025-10'` tại P&L/Trend; nâng cấp `POST /api/upload` dùng index SHA-256 bất đồng bộ (`getUploadHashIndex`), kiểm tra magic bytes ảnh (`hasValidImageSignature`) và ghi file bất đồng bộ.
+- **`src/utils/payrollDeductions.ts` & `server/db/pgStore.ts`**: Thêm `recalculatePayrollRecordFinancials` dùng chung cho `adjustPayrollRecord` và `syncRevenueToPayroll` (bọc `prisma.$transaction`); bổ sung nhánh `'update_idol'` trong `approveApproval`; sửa lọc `userId` trong `getPayrollRecords`; đồng bộ kỳ mặc định `getEffectiveSystemDate()` và cộng `LABOR_INSURANCE` từ `CompanyExpense` vào `totalCompanyLaborCost`/`totalOpEx` trong `getFinancePnLSummary`.
+- **`test/authorization.test.ts` & `test/payrollDeductions.test.ts`**: Bổ sung unit test cho `hasAnyAction`, `routePolicies` và `recalculatePayrollRecordFinancials`.
+- **Tài liệu**: Cập nhật `docs/system-capabilities.md`, `docs/project-state.md`, `docs/changes/CHANGELOG.md` và `docs/architecture/system-functional-specification.md`.
+
+### [2026-11-11] - Tạo tài liệu đặc tả hệ thống và chức năng
+
+- Bổ sung file đặc tả mới `docs/architecture/system-functional-specification.md` (6 phần: tổng quan & kiến trúc, mô hình dữ liệu 25 Prisma models & 74 indexes, phân tích chi tiết 9 module chức năng, xác thực/RBAC/audit/clock mô phỏng, tích hợp & biến môi trường, đánh giá sức khỏe hệ thống & rủi ro kỹ thuật) dựa trên mã nguồn thực tế của repository.
+- Chỉ thay đổi tài liệu (`docs/`), cập nhật `docs/project-state.md` và `docs/changes/CHANGELOG.md`; giữ nguyên `docs/architecture-current.md`, không chỉnh sửa mã nguồn, schema hay cấu hình triển khai.
+
 ### [2026-11-11] - Tránh build và deploy cho thay đổi chỉ có tài liệu và tệp phi-runtime
 
 - Đưa bộ lọc `changes:regexp` lên `workflow:rules` cho nhánh `main` (kèm hỗ trợ chạy tay qua `$CI_PIPELINE_SOURCE == "web"`) để các commit chỉ sửa tệp phi-runtime không tạo pipeline rỗng lỗi trên `main`; giữ job `docs_only` nhẹ cho MR.

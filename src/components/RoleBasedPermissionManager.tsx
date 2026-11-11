@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { UserAccount, Idol, AppTabPermission, AppActionPermission } from '../types/index.ts';
 import { ROLE_PRESETS, RolePreset, DEFAULT_BLANK_AVATAR } from '../types/roles.ts';
+import { ACTION_PERMISSION_OPTIONS, TAB_PERMISSION_OPTIONS } from '../utils/permissionCatalog.ts';
 
 interface RoleBasedPermissionManagerProps {
   currentUser: UserAccount;
@@ -33,34 +34,6 @@ interface RoleBasedPermissionManagerProps {
   departments: string[];
   onSaveUser: (userData: Partial<UserAccount>) => Promise<void>;
 }
-
-const TAB_OPTIONS: { id: AppTabPermission; label: string; desc: string; icon: string }[] = [
-  { id: 'roster', label: 'Danh Sách Nhân Sự', desc: 'Xem danh bạ nghệ sĩ & cán bộ', icon: '👥' },
-  { id: 'my_dashboard', label: 'Dashboard Idol', desc: 'Bàn làm việc cá nhân của Idol', icon: '🌟' },
-  { id: 'scoring', label: 'Bảng Điểm', desc: 'Chấm điểm và đánh giá nghệ sĩ', icon: '⭐' },
-  { id: 'leaderboard', label: 'Xếp Hạng', desc: 'Bảng xếp hạng nghệ sĩ toàn công ty', icon: '🏆' },
-  { id: 'schedule', label: 'Lịch Làm Việc & Ca Trực', desc: 'Xem & điều phối ca làm việc', icon: '📅' },
-  { id: 'tasks', label: 'Nhiệm Vụ', desc: 'Quản lý công việc và chỉ tiêu', icon: '📋' },
-  { id: 'payroll', label: 'Bảng Lương', desc: 'Quản lý bảng tính lương & phiếu lương', icon: '💵' },
-  { id: 'kpi', label: 'Chỉ Số KPI', desc: 'Thiết lập & theo dõi chỉ số hiệu suất', icon: '🎯' },
-  { id: 'analytics', label: 'Thống Kê', desc: 'Báo cáo chỉ số toàn diện', icon: '📊' },
-  { id: 'admin', label: 'Trang Quản Trị', desc: 'Cấu hình hệ thống & phân quyền user', icon: '⚙️' }
-];
-
-const ACTION_OPTIONS: { id: AppActionPermission; label: string; desc: string }[] = [
-  { id: 'manage_idols', label: 'Quản Lý Nhân Sự', desc: 'Thêm mới, chỉnh sửa và xóa hồ sơ Idol/Cán bộ' },
-  { id: 'manage_scores', label: 'Chấm Điểm Nghệ Sĩ', desc: 'Nhập điểm và lưu phiếu đánh giá' },
-  { id: 'manage_criteria', label: 'Quản Lý Tiêu Chí', desc: 'Tạo và cập nhật thang điểm đánh giá' },
-  { id: 'manage_schedule', label: 'Điều Phối Ca Live & Lịch', desc: 'Xếp phòng stream, duyệt ca trực' },
-  { id: 'manage_tasks', label: 'Quản Lý Nhiệm Vụ', desc: 'Giao task, bấm giờ và duyệt hoàn thành' },
-  { id: 'manage_departments', label: 'Quản Lý Đơn Vị & Khối', desc: 'Cơ cấu tổ chức phòng ban và trạng thái' },
-  { id: 'manage_settings', label: 'Cấu Hình Hệ Thống', desc: 'Cài đặt thương hiệu và quy tắc hệ thống' },
-  { id: 'manage_approvals', label: 'Phê Duyệt Yêu Cầu', desc: 'Duyệt đề xuất nhân sự và đơn xin nghỉ phép' },
-  { id: 'manage_payroll', label: 'Quản Trị Bảng Lương', desc: 'Tính lương, chốt kỳ và ban hành phiếu lương' },
-  { id: 'approve_payroll', label: 'Phê Duyệt Bảng Lương', desc: 'Ký duyệt bảng lương chuyển khoản' },
-  { id: 'hot_bonus', label: 'Thưởng Nóng Nghệ Sĩ', desc: 'Cấp thưởng nóng cho Idol xuất sắc' },
-  { id: 'manage_kpi', label: 'Quản Lý Chỉ Số KPI', desc: 'Thiết lập chỉ tiêu doanh số và ca live' }
-];
 
 export const RoleBasedPermissionManager: React.FC<RoleBasedPermissionManagerProps> = ({
   currentUser,
@@ -72,6 +45,7 @@ export const RoleBasedPermissionManager: React.FC<RoleBasedPermissionManagerProp
   // Active Role State
   const [selectedRoleId, setSelectedRoleId] = useState<string>(ROLE_PRESETS[0]?.id || 'director');
   const [roleSearch, setRoleSearch] = useState('');
+  const [permSearch, setPermSearch] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
   const [savingBatch, setSavingBatch] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -463,6 +437,9 @@ export const RoleBasedPermissionManager: React.FC<RoleBasedPermissionManagerProp
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
+                id="rbac-role-search"
+                name="rbacRoleSearch"
+                aria-label="Tìm vai trò hoặc phòng ban"
                 type="text"
                 value={roleSearch}
                 onChange={e => setRoleSearch(e.target.value)}
@@ -564,7 +541,7 @@ export const RoleBasedPermissionManager: React.FC<RoleBasedPermissionManagerProp
 
           {/* Section 1: Standard Permissions Matrix */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs space-y-5">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+            <div className="border-b border-slate-100 pb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                   <Layers className="w-4 h-4 text-indigo-600" />
@@ -574,9 +551,24 @@ export const RoleBasedPermissionManager: React.FC<RoleBasedPermissionManagerProp
                   Tất cả nhân sự được gán vào vai trò này sẽ tự động nhận các quyền được tick bên dưới
                 </p>
               </div>
-              <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
-                {activePermissions.tabs.length} Tab · {activePermissions.actions.length} Quyền
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="rbac-perm-search"
+                    name="rbacPermSearch"
+                    aria-label="Lọc tên tab hoặc quyền thao tác"
+                    type="text"
+                    value={permSearch}
+                    onChange={(e) => setPermSearch(e.target.value)}
+                    placeholder="Lọc tab / quyền..."
+                    className="pl-8 pr-3 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400 text-slate-800 w-44"
+                  />
+                </div>
+                <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                  {activePermissions.tabs.length}/{TAB_PERMISSION_OPTIONS.length} Tab · {activePermissions.actions.length}/{ACTION_PERMISSION_OPTIONS.length} Quyền
+                </span>
+              </div>
             </div>
 
             {/* Sub-section: Navigation Tabs */}
@@ -586,12 +578,21 @@ export const RoleBasedPermissionManager: React.FC<RoleBasedPermissionManagerProp
                   <span>Mục Được Phép Xem & Truy Cập (Navigation Tabs)</span>
                 </label>
                 <span className="text-[11px] text-slate-400">
-                  {activePermissions.tabs.length}/{TAB_OPTIONS.length} mục
+                  {activePermissions.tabs.length}/{TAB_PERMISSION_OPTIONS.length} mục
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                {TAB_OPTIONS.map(tab => {
+                {TAB_PERMISSION_OPTIONS.filter((tab) => {
+                  const q = permSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    tab.label.toLowerCase().includes(q) ||
+                    tab.desc.toLowerCase().includes(q) ||
+                    tab.group.toLowerCase().includes(q) ||
+                    tab.id.toLowerCase().includes(q)
+                  );
+                }).map(tab => {
                   const checked = activePermissions.tabs.includes(tab.id);
                   return (
                     <label
@@ -625,45 +626,67 @@ export const RoleBasedPermissionManager: React.FC<RoleBasedPermissionManagerProp
             </div>
 
             {/* Sub-section: Action Permissions */}
-            <div className="space-y-2.5 pt-2 border-t border-slate-100">
+            <div className="space-y-3 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <span>Hành Động Thao Tác Được Phép (Action Permissions)</span>
                 </label>
                 <span className="text-[11px] text-slate-400">
-                  {activePermissions.actions.length}/{ACTION_OPTIONS.length} quyền
+                  {activePermissions.actions.length}/{ACTION_PERMISSION_OPTIONS.length} quyền
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {ACTION_OPTIONS.map(act => {
-                  const checked = activePermissions.actions.includes(act.id);
+              {(['Nhân sự & Lịch', 'KPI & Vận hành', 'Tài chính & Lương', 'Hệ thống'] as const).map((groupName) => {
+                const q = permSearch.trim().toLowerCase();
+                const groupActions = ACTION_PERMISSION_OPTIONS.filter((act) => {
+                  if (act.group !== groupName) return false;
+                  if (!q) return true;
                   return (
-                    <label
-                      key={act.id}
-                      className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs transition-all ${isSystemAdminRole ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'} ${
-                        checked
-                          ? 'bg-indigo-50/70 border-indigo-300 text-indigo-950 font-semibold shadow-2xs'
-                          : 'bg-slate-50/60 border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleAction(act.id)}
-                        disabled={isSystemAdminRole}
-                        className="accent-indigo-600 rounded mt-0.5"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold">{act.label}</div>
-                        <div className="text-[10px] text-slate-400 font-normal truncate mt-0.5">
-                          {act.desc}
-                        </div>
-                      </div>
-                    </label>
+                    act.label.toLowerCase().includes(q) ||
+                    act.desc.toLowerCase().includes(q) ||
+                    act.group.toLowerCase().includes(q) ||
+                    act.id.toLowerCase().includes(q)
                   );
-                })}
-              </div>
+                });
+                if (groupActions.length === 0) return null;
+
+                return (
+                  <div key={groupName} className="space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {groupName}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {groupActions.map(act => {
+                        const checked = activePermissions.actions.includes(act.id);
+                        return (
+                          <label
+                            key={act.id}
+                            className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-xs transition-all ${isSystemAdminRole ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'} ${
+                              checked
+                                ? 'bg-indigo-50/70 border-indigo-300 text-indigo-950 font-semibold shadow-2xs'
+                                : 'bg-slate-50/60 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleAction(act.id)}
+                              disabled={isSystemAdminRole}
+                              className="accent-indigo-600 rounded mt-0.5"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold">{act.label}</div>
+                              <div className="text-[10px] text-slate-400 font-normal truncate mt-0.5">
+                                {act.desc}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Sub-section: Department Scope */}

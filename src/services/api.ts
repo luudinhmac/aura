@@ -503,7 +503,10 @@ export const api = {
     const res = await fetch(`${API_BASE}/statuses/${encodeURIComponent(name)}`, {
       method: 'DELETE'
     });
-    if (!res.ok) throw new Error('Không thể xóa trạng thái');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Không thể xóa trạng thái');
+    }
     return res.json();
   },
 
@@ -1222,6 +1225,39 @@ export const api = {
     const ct = res.headers.get('content-type') || '';
     if (!res.ok || !ct.includes('application/json')) {
       throw new Error('Không thể tải chuỗi số liệu xu hướng tài chính');
+    }
+    return res.json();
+  },
+
+  // Audit Logs (Nhật ký hệ thống cho Super Admin)
+  async getAuditLogs(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    method?: string;
+    resource?: string;
+    statusCode?: number;
+    category?: 'all' | 'data' | 'auth';
+    statusGroup?: 'all' | '2xx' | '4xx_5xx';
+    fromDate?: string;
+    toDate?: string;
+  }): Promise<import('../types/index.ts').AuditLogPage> {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.search) query.set('search', params.search);
+    if (params?.method && params.method !== 'ALL') query.set('method', params.method);
+    if (params?.resource && params.resource !== 'all') query.set('resource', params.resource);
+    if (params?.statusCode) query.set('statusCode', String(params.statusCode));
+    if (params?.category && params.category !== 'all') query.set('category', params.category);
+    if (params?.statusGroup && params.statusGroup !== 'all') query.set('statusGroup', params.statusGroup);
+    if (params?.fromDate) query.set('fromDate', params.fromDate);
+    if (params?.toDate) query.set('toDate', params.toDate);
+    const qs = query.toString();
+    const res = await fetch(`${API_BASE}/admin/audit-logs${qs ? `?${qs}` : ''}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Không thể tải nhật ký hệ thống');
     }
     return res.json();
   },

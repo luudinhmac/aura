@@ -7,7 +7,6 @@ import {
   Tag,
   CheckCircle2,
   XCircle,
-  Clock,
   Search,
   Plus,
   Trash2,
@@ -23,8 +22,6 @@ import {
   Sparkles,
   UserCheck,
   UserX,
-  FileCheck,
-  FileX,
   Save,
   Check,
   Loader2,
@@ -35,7 +32,6 @@ import {
   Lock,
   CalendarCheck2,
   CalendarX2,
-  CalendarClock,
   ArrowLeft,
   ChevronRight,
   ChevronDown,
@@ -48,13 +44,13 @@ import {
   CornerDownRight,
   RefreshCw,
   RotateCcw,
-  KeyRound
+  KeyRound,
+  Activity
 } from 'lucide-react';
-import { getTodayIsoDate, formatDateVN, calculateTenure, calculateAnnualLeaveQuota } from '../utils/dateUtils.ts';
+import { getTodayIsoDate, formatDateVN, calculateTenure } from '../utils/dateUtils.ts';
 import { DateInput } from '../components/DateInput.tsx';
 import {
   UserAccount,
-  ApprovalRequest,
   Criterion,
   Idol,
   IdolScoreRecord,
@@ -68,7 +64,6 @@ import {
   AppActionPermission,
   ROLE_PRESETS,
   RolePreset,
-  LeaveRequest
 } from '../types/index.ts';
 import {
   MAIN_DEPARTMENTS,
@@ -78,23 +73,16 @@ import {
   DEFAULT_BLANK_AVATAR
 } from '../types/roles.ts';
 import { RoleBasedPermissionManager } from '../components/RoleBasedPermissionManager.tsx';
+import { AdminAuditLogPanel } from '../components/AdminAuditLogPanel.tsx';
 import { api } from '../services/api.ts';
 import { canAccessAdminSubTab, type AdminSubTab } from '../utils/adminAccess.ts';
-
-function canApproveDirectorLeave(user: UserAccount): boolean {
-  if (user.isSuperAdmin) return true;
-  const roleTitle = user.roleTitle?.toLowerCase() || '';
-  const department = user.department?.toLowerCase() || '';
-  return user.role === 'director' || roleTitle.includes('giám đốc') || department.includes('ban giám đốc');
-}
+import { ACTION_PERMISSION_OPTIONS, TAB_PERMISSION_OPTIONS } from '../utils/permissionCatalog.ts';
 
 type AdminTab = AdminSubTab;
 
 interface AdminPortalViewProps {
   currentUser: UserAccount;
   users: UserAccount[];
-  approvals: ApprovalRequest[];
-  leaveRequests?: LeaveRequest[];
   departments: string[];
   personnelTypes: string[];
   statuses: string[];
@@ -103,12 +91,6 @@ interface AdminPortalViewProps {
   scores: IdolScoreRecord[];
   settings: AppSettings;
   columnHeaders: ColumnHeadersConfig;
-  onApproveRequest: (id: string, note?: string) => Promise<void>;
-  onRejectRequest: (id: string, reason?: string) => Promise<void>;
-  onDeleteApproval: (id: string) => Promise<void>;
-  onApproveLeaveRequest?: (id: string, note?: string) => Promise<void>;
-  onRejectLeaveRequest?: (id: string, note?: string) => Promise<void>;
-  onDeleteLeaveRequest?: (id: string) => Promise<void>;
   onSaveUser: (userData: Partial<UserAccount>) => Promise<void>;
   onDeleteUser: (id: string) => Promise<void>;
   onAddDepartment: (name: string) => Promise<void>;
@@ -130,34 +112,9 @@ interface AdminPortalViewProps {
   onResetData?: () => void;
 }
 
-const TAB_OPTIONS: { id: AppTabPermission; label: string }[] = [
-  { id: 'roster', label: 'Danh Sách Nhân Sự' },
-  { id: 'my_dashboard', label: 'Dashboard Idol (Cá Nhân)' },
-  { id: 'scoring', label: 'Bảng Điểm' },
-  { id: 'leaderboard', label: 'Xếp Hạng' },
-  { id: 'schedule', label: 'Lịch Làm Việc & Ca Trực' },
-  { id: 'tasks', label: 'Nhiệm Vụ' },
-  { id: 'payroll', label: 'Bảng Lương' },
-  { id: 'analytics', label: 'Thống Kê' },
-  { id: 'admin', label: 'Trang Quản Trị' }
-];
-
-const ACTION_OPTIONS: { id: AppActionPermission; label: string }[] = [
-  { id: 'manage_idols', label: 'Quản lý Nhân Sự (Thêm/Sửa/Xóa Idol)' },
-  { id: 'manage_scores', label: 'Chấm Điểm & Lưu Điểm' },
-  { id: 'manage_criteria', label: 'Quản lý Tiêu Chí Chấm Điểm' },
-  { id: 'manage_schedule', label: 'Thiết Lập Lịch Làm Việc & Ca Live' },
-  { id: 'manage_tasks', label: 'Quản lý Nhiệm Vụ & Bấm Giờ' },
-  { id: 'manage_departments', label: 'Quản lý Đơn Vị & Trạng Thái' },
-  { id: 'manage_settings', label: 'Cấu Hình Hệ Thống' },
-  { id: 'manage_approvals', label: 'Phê Duyệt Yêu Cầu Nhân Sự' }
-];
-
 export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   currentUser,
   users,
-  approvals,
-  leaveRequests = [],
   departments,
   personnelTypes,
   statuses,
@@ -165,12 +122,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   idols,
   settings,
   columnHeaders,
-  onApproveRequest,
-  onRejectRequest,
-  onDeleteApproval,
-  onApproveLeaveRequest,
-  onRejectLeaveRequest,
-  onDeleteLeaveRequest,
   onSaveUser,
   onDeleteUser,
   onAddDepartment,
@@ -191,7 +142,13 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   onSyncUsers,
   onResetData
 }) => {
-  const canManageLeaveApprovals = currentUser?.isSuperAdmin || currentUser?.allowedActions?.includes('manage_approvals');
+  const defaultAdminSubTab: AdminTab = currentUser?.isSuperAdmin
+    ? 'users'
+    : canAccessAdminSubTab(currentUser, 'criteria')
+      ? 'criteria'
+      : canAccessAdminSubTab(currentUser, 'departments')
+        ? 'departments'
+        : 'settings';
   const [activeSubTab, setActiveSubTab] = useState<AdminTab>(() => {
     try {
       const saved = localStorage.getItem('aura_admin_subtab') as AdminTab;
@@ -199,14 +156,12 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     } catch {
       // fallback
     }
-    return canManageLeaveApprovals ? 'leave_management' : 'approvals';
+    return defaultAdminSubTab;
   });
 
   const effectiveSubTab = canAccessAdminSubTab(currentUser, activeSubTab)
     ? activeSubTab
-    : canManageLeaveApprovals
-      ? 'leave_management'
-      : 'approvals';
+    : defaultAdminSubTab;
 
   useEffect(() => {
     if (activeSubTab !== effectiveSubTab) setActiveSubTab(effectiveSubTab);
@@ -218,8 +173,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   }, [activeSubTab, effectiveSubTab]);
 
   // Search queries for each section
-  const [approvalSearch, setApprovalSearch] = useState('');
-  const [approvalStatusFilter, setApprovalStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [userSearch, setUserSearch] = useState('');
   const [userCategoryFilter, setUserCategoryFilter] = useState<'all' | 'staff' | 'idols'>('all');
   const [userPermissionViewMode, setUserPermissionViewMode] = useState<'rbac' | 'user_list'>('rbac');
@@ -229,31 +182,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   const [personnelTypeSearch, setPersonnelTypeSearch] = useState('');
   const [statusSearch, setStatusSearch] = useState('');
   const [critSearch, setCritSearch] = useState('');
-
-  // In-app Approval Modal & Toast Feedback
-  const [processingApprId, setProcessingApprId] = useState<string | null>(null);
-  const [selectedApprDetail, setSelectedApprDetail] = useState<ApprovalRequest | null>(null);
-  const [approvalModal, setApprovalModal] = useState<{
-    isOpen: boolean;
-    request: ApprovalRequest;
-    mode: 'approve' | 'reject';
-    note: string;
-  } | null>(null);
-  const [approvalToast, setApprovalToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  // In-app Leave Management State
-  const [leaveSearch, setLeaveSearch] = useState('');
-  const [leaveStatusFilter, setLeaveStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
-  const [leavePolicyFilter, setLeavePolicyFilter] = useState<'all' | 'director' | 'manager' | 'auto'>('all');
-  const [leaveDeptFilter, setLeaveDeptFilter] = useState<string>('all');
-  const [processingLeaveId, setProcessingLeaveId] = useState<string | null>(null);
-  const [leaveActionModal, setLeaveActionModal] = useState<{
-    isOpen: boolean;
-    request: LeaveRequest;
-    mode: 'approve' | 'reject';
-    note: string;
-  } | null>(null);
-  const [leaveToast, setLeaveToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // User form modal / state
   const [editingUser, setEditingUser] = useState<Partial<UserAccount> | null>(null);
@@ -407,66 +335,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       setPersonnelColumnError(error instanceof Error ? error.message : 'Không thể sắp xếp cột');
     }
   };
-
-  // Pending count for badge
-  const pendingCount = useMemo(() => {
-    return approvals.filter((a) => a.status === 'pending').length;
-  }, [approvals]);
-
-  // Filtered approvals
-  const filteredApprovals = useMemo(() => {
-    return approvals.filter((a) => {
-      const matchStatus = approvalStatusFilter === 'all' || a.status === approvalStatusFilter;
-      const term = approvalSearch.toLowerCase().trim();
-      const matchSearch =
-        !term ||
-        a.targetName.toLowerCase().includes(term) ||
-        a.requestedBy.name.toLowerCase().includes(term) ||
-        (a.reason && a.reason.toLowerCase().includes(term)) ||
-        (a.data?.department && a.data.department.toLowerCase().includes(term));
-      return matchStatus && matchSearch;
-    });
-  }, [approvals, approvalStatusFilter, approvalSearch]);
-
-  // Leave Management Counts & Filters
-  const pendingLeavesCount = useMemo(() => {
-    return leaveRequests.filter((l) => l.status === 'pending').length;
-  }, [leaveRequests]);
-
-  const directorPendingLeavesCount = useMemo(() => {
-    return leaveRequests.filter((l) => l.status === 'pending' && l.totalDays >= 3).length;
-  }, [leaveRequests]);
-
-  const autoApprovedLeavesCount = useMemo(() => {
-    return leaveRequests.filter((l) => l.autoApproved || (l.totalDays === 1 && l.status === 'approved')).length;
-  }, [leaveRequests]);
-
-  const approvedLeavesDays = useMemo(() => {
-    return leaveRequests
-      .filter((l) => l.status === 'approved')
-      .reduce((acc, l) => acc + (l.totalDays || 0), 0);
-  }, [leaveRequests]);
-
-  const filteredLeaves = useMemo(() => {
-    return leaveRequests.filter((l) => {
-      const term = leaveSearch.toLowerCase().trim();
-      const matchSearch =
-        !term ||
-        l.idolName.toLowerCase().includes(term) ||
-        l.department.toLowerCase().includes(term) ||
-        (l.reason && l.reason.toLowerCase().includes(term));
-
-      const matchStatus = leaveStatusFilter === 'all' || l.status === leaveStatusFilter;
-      const matchDept = leaveDeptFilter === 'all' || l.department === leaveDeptFilter;
-
-      let matchPolicy = true;
-      if (leavePolicyFilter === 'director') matchPolicy = l.totalDays >= 3;
-      else if (leavePolicyFilter === 'manager') matchPolicy = l.totalDays === 2;
-      else if (leavePolicyFilter === 'auto') matchPolicy = l.totalDays === 1;
-
-      return matchSearch && matchStatus && matchDept && matchPolicy;
-    });
-  }, [leaveRequests, leaveSearch, leaveStatusFilter, leaveDeptFilter, leavePolicyFilter]);
 
   // Helper to determine if an account is a staff account
   const isUserStaff = useCallback(
@@ -762,133 +630,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
     );
   }, [criteria, critSearch]);
 
-  // Handle In-App Approve & Reject Modal
-  const openApproveModal = (req: ApprovalRequest) => {
-    setApprovalModal({
-      isOpen: true,
-      request: req,
-      mode: 'approve',
-      note: 'Đã kiểm tra và phê duyệt hồ sơ.'
-    });
-  };
-
-  const openRejectModal = (req: ApprovalRequest) => {
-    setApprovalModal({
-      isOpen: true,
-      request: req,
-      mode: 'reject',
-      note: 'Chưa đạt yêu cầu quy chuẩn của công ty.'
-    });
-  };
-
-  const handleConfirmApprovalModal = async () => {
-    if (!approvalModal) return;
-    const { request, mode, note } = approvalModal;
-    try {
-      setProcessingApprId(request.id);
-      if (mode === 'approve') {
-        await onApproveRequest(request.id, note);
-        setApprovalToast({
-          type: 'success',
-          message: `Đã phê duyệt thành công yêu cầu "${request.targetName}" vào hệ thống!`
-        });
-      } else {
-        await onRejectRequest(request.id, note);
-        setApprovalToast({
-          type: 'success',
-          message: `Đã từ chối yêu cầu "${request.targetName}".`
-        });
-      }
-      setApprovalModal(null);
-      setTimeout(() => setApprovalToast(null), 4000);
-    } catch (err: any) {
-      setApprovalToast({
-        type: 'error',
-        message: err.message || 'Lỗi khi xử lý yêu cầu'
-      });
-      setTimeout(() => setApprovalToast(null), 4000);
-    } finally {
-      setProcessingApprId(null);
-    }
-  };
-
-  const handleQuickApprove = async (req: ApprovalRequest) => {
-    try {
-      setProcessingApprId(req.id);
-      await onApproveRequest(req.id, 'Phê duyệt nhanh');
-      setApprovalToast({
-        type: 'success',
-        message: `Đã phê duyệt nhanh thành công "${req.targetName}"!`
-      });
-      setTimeout(() => setApprovalToast(null), 4000);
-    } catch (err: any) {
-      setApprovalToast({
-        type: 'error',
-        message: err.message || 'Lỗi khi phê duyệt'
-      });
-      setTimeout(() => setApprovalToast(null), 4000);
-    } finally {
-      setProcessingApprId(null);
-    }
-  };
-
-  const handleExecuteLeaveAction = async () => {
-    if (!leaveActionModal) return;
-    const { request, mode, note } = leaveActionModal;
-    try {
-      setProcessingLeaveId(request.id);
-      if (mode === 'approve') {
-        if (onApproveLeaveRequest) {
-          await onApproveLeaveRequest(request.id, note || 'Đã phê duyệt đơn nghỉ phép');
-        }
-        setLeaveToast({
-          type: 'success',
-          message: `Đã phê duyệt thành công đơn nghỉ của "${request.idolName}" (${request.totalDays} ngày)!`
-        });
-      } else {
-        if (onRejectLeaveRequest) {
-          await onRejectLeaveRequest(request.id, note || 'Từ chối đơn nghỉ phép');
-        }
-        setLeaveToast({
-          type: 'success',
-          message: `Đã từ chối đơn nghỉ phép của "${request.idolName}".`
-        });
-      }
-      setLeaveActionModal(null);
-      setTimeout(() => setLeaveToast(null), 4000);
-    } catch (err: any) {
-      setLeaveToast({
-        type: 'error',
-        message: err.message || 'Lỗi khi xử lý đơn nghỉ phép'
-      });
-      setTimeout(() => setLeaveToast(null), 4000);
-    } finally {
-      setProcessingLeaveId(null);
-    }
-  };
-
-  const handleQuickApproveLeave = async (req: LeaveRequest) => {
-    try {
-      setProcessingLeaveId(req.id);
-      if (onApproveLeaveRequest) {
-        await onApproveLeaveRequest(req.id, 'Phê duyệt nhanh');
-      }
-      setLeaveToast({
-        type: 'success',
-        message: `Đã phê duyệt nhanh thành công đơn của "${req.idolName}"!`
-      });
-      setTimeout(() => setLeaveToast(null), 4000);
-    } catch (err: any) {
-      setLeaveToast({
-        type: 'error',
-        message: err.message || 'Lỗi khi phê duyệt'
-      });
-      setTimeout(() => setLeaveToast(null), 4000);
-    } finally {
-      setProcessingLeaveId(null);
-    }
-  };
-
   // Move criteria priority up/down
   const movePriority = async (critId: string, direction: 'up' | 'down') => {
     const sorted = [...criteria].sort((a, b) => a.priorityOrder - b.priorityOrder);
@@ -976,31 +717,19 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-extrabold text-slate-900">
-                  {currentUser.isSuperAdmin ? 'Trung Tâm Quản Trị Hệ Thống' : 'Trung Tâm Phê Duyệt & Vận Hành'}
-                </h1>
+                <h1 className="text-lg font-extrabold text-slate-900">Trung Tâm Quản Trị Hệ Thống</h1>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 uppercase tracking-wide">
-                  {currentUser.isSuperAdmin ? 'Super Admin Console' : 'Approval Center'}
+                  {currentUser.isSuperAdmin ? 'Super Admin Console' : 'System Config'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                {currentUser.isSuperAdmin
-                  ? 'Quản lý phê duyệt nhân sự từ cấp dưới, tài khoản & phân quyền xem theo đơn vị, tiêu chí điểm số và cấu hình hệ thống.'
-                  : 'Xem và phê duyệt các đơn nghỉ phép, yêu cầu nhân sự thuộc phạm vi được phân quyền.'}
+                Quản lý tài khoản, phân quyền RBAC, nhật ký hệ thống, cơ cấu danh mục, tiêu chí &amp; cấu hình.
               </p>
             </div>
           </div>
 
           {/* Quick Stats Badges */}
           <div className="flex items-center gap-2 shrink-0">
-            <div className="px-3 py-1.5 bg-rose-50 border border-rose-200 rounded-xl text-center">
-              <div className="text-[10px] font-medium text-rose-600">Yêu Cầu Chờ Duyệt</div>
-              <div className="text-sm font-extrabold text-rose-700">{pendingCount}</div>
-            </div>
-            <div className="px-3 py-1.5 bg-purple-50 border border-purple-200 rounded-xl text-center">
-              <div className="text-[10px] font-medium text-purple-600">Phép Chờ Duyệt</div>
-              <div className="text-sm font-extrabold text-purple-700">{pendingLeavesCount}</div>
-            </div>
             <div className="px-3 py-1.5 bg-sky-50 border border-sky-200 rounded-xl text-center">
               <div className="text-[10px] font-medium text-sky-600">Tài Khoản</div>
               <div className="text-sm font-extrabold text-sky-700">{users.length}</div>
@@ -1012,778 +741,180 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
           </div>
         </div>
 
-        {/* Sub-Tabs Navigation: Phân nhóm 3 cụm chức năng logic, responsive wrap, không bị che/cuộn */}
+        {/* Sub-Tabs Navigation: 3 nhóm quản trị hệ thống (Bảo mật, Danh mục, Cấu hình) */}
         <div className="mt-5 border-t border-slate-100 pt-3.5">
-          <div className="bg-slate-50/80 p-1.5 rounded-2xl border border-slate-200/80 flex flex-wrap items-center gap-1.5">
-            {/* Cụm 1: HÀNG ĐỢI DUYỆT */}
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setActiveSubTab('leave_management')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  effectiveSubTab === 'leave_management'
-                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-                title="Quản trị và phê duyệt các đơn xin nghỉ phép của nhân sự"
-              >
-                <CalendarClock className={`w-3.5 h-3.5 ${effectiveSubTab === 'leave_management' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Duyệt Nghỉ Phép</span>
-                {pendingLeavesCount > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-purple-600 text-white">
-                    {pendingLeavesCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveSubTab('approvals')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  effectiveSubTab === 'approvals'
-                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-                title="Hàng đợi phê duyệt thay đổi thông tin nhân sự từ cấp dưới"
-              >
-                <Clock className={`w-3.5 h-3.5 ${effectiveSubTab === 'approvals' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Duyệt Yêu Cầu</span>
-                {pendingCount > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-rose-600 text-white">
-                    {pendingCount}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Phân cách Cụm 1 & Cụm 2 */}
-            <div className="h-4 w-px bg-slate-300 hidden md:block mx-0.5" />
-
-            {/* Cụm 2: TỔ CHỨC & PHÂN QUYỀN */}
+          <div className="bg-slate-50/80 p-2 rounded-2xl border border-slate-200/80 grid grid-cols-1 lg:grid-cols-3 gap-2">
+            {/* Nhóm 1: Tài khoản & Bảo mật */}
             {currentUser.isSuperAdmin && (
-            <div className="flex items-center gap-1 flex-wrap">
-              {currentUser.isSuperAdmin && (
-              <button
-                type="button"
-                onClick={() => setActiveSubTab('users')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  effectiveSubTab === 'users'
-                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-                title="Danh sách tài khoản hệ thống và ma trận phân quyền"
-              >
-                <Users className={`w-3.5 h-3.5 ${effectiveSubTab === 'users' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Tài Khoản & Phân Quyền</span>
-                <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
-                  {users.length}
-                </span>
-              </button>
-              )}
+              <div className="space-y-1">
+                <div className="px-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  1. Tài khoản &amp; Bảo mật
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubTab('users')}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      effectiveSubTab === 'users'
+                        ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                    }`}
+                    title="Danh sách tài khoản hệ thống và ma trận phân quyền"
+                  >
+                    <Users className={`w-3.5 h-3.5 ${effectiveSubTab === 'users' ? 'text-rose-600' : 'text-slate-400'}`} />
+                    <span>Tài Khoản &amp; RBAC</span>
+                    <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
+                      {users.length}
+                    </span>
+                  </button>
 
-              {currentUser.isSuperAdmin && (
-              <button
-                type="button"
-                onClick={() => setActiveSubTab('departments')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  effectiveSubTab === 'departments'
-                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-                title="Quản lý cây cơ cấu tổ chức và các phòng ban / khối"
-              >
-                <Building2 className={`w-3.5 h-3.5 ${effectiveSubTab === 'departments' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Cơ Cấu Đơn Vị</span>
-                <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
-                  {departments.length}
-                </span>
-              </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setActiveSubTab('personnel_types')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  effectiveSubTab === 'personnel_types'
-                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-                title="Danh mục loại nhân sự (Công ty, Outsource, CTV, Dịch vụ ngoài...)"
-              >
-                <Layers className={`w-3.5 h-3.5 ${effectiveSubTab === 'personnel_types' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Loại Nhân Sự</span>
-                <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
-                  {personnelTypes.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveSubTab('statuses')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  effectiveSubTab === 'statuses'
-                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-                title="Danh mục trạng thái làm việc của nhân sự"
-              >
-                <Tag className={`w-3.5 h-3.5 ${effectiveSubTab === 'statuses' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Trạng Thái</span>
-                <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
-                  {statuses.length}
-                </span>
-              </button>
-            </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubTab('audit_logs')}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      effectiveSubTab === 'audit_logs'
+                        ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                    }`}
+                    title="Theo dõi nhật ký kiểm toán thao tác API và xác thực"
+                  >
+                    <Activity className={`w-3.5 h-3.5 ${effectiveSubTab === 'audit_logs' ? 'text-rose-600' : 'text-slate-400'}`} />
+                    <span>Nhật Ký Hệ Thống</span>
+                  </button>
+                </div>
+              </div>
             )}
 
-            {/* Phân cách Cụm 2 & Cụm 3 */}
-            <div className="h-4 w-px bg-slate-300 hidden lg:block mx-0.5" />
+            {/* Nhóm 2: Danh mục & Tổ chức */}
+            {(canAccessAdminSubTab(currentUser, 'departments') || canAccessAdminSubTab(currentUser, 'statuses')) && (
+              <div className="space-y-1">
+                <div className="px-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  2. Danh mục &amp; Tổ chức
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  {canAccessAdminSubTab(currentUser, 'departments') && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('departments')}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        effectiveSubTab === 'departments'
+                          ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                      title="Quản lý cây cơ cấu tổ chức và các phòng ban / khối"
+                    >
+                      <Building2 className={`w-3.5 h-3.5 ${effectiveSubTab === 'departments' ? 'text-rose-600' : 'text-slate-400'}`} />
+                      <span>Cơ Cấu Đơn Vị</span>
+                      <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
+                        {departments.length}
+                      </span>
+                    </button>
+                  )}
 
-            {/* Cụm 3: HỆ THỐNG & TIÊU CHÍ */}
-            <div className="flex items-center gap-1">
-              {canManageCriteria && (
-                <button
-                  type="button"
-                  onClick={() => setActiveSubTab('criteria')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                    effectiveSubTab === 'criteria'
-                      ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                  title="Danh mục các tiêu chí đánh giá và trọng số điểm"
-                >
-                  <Sliders className={`w-3.5 h-3.5 ${effectiveSubTab === 'criteria' ? 'text-rose-600' : 'text-slate-400'}`} />
-                  <span>Tiêu Chí Đánh Giá</span>
-                  <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
-                    {criteria.length}
-                  </span>
-                </button>
-              )}
+                  {canAccessAdminSubTab(currentUser, 'personnel_types') && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('personnel_types')}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        effectiveSubTab === 'personnel_types'
+                          ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                      title="Danh mục loại nhân sự (Công ty, Outsource, CTV, Dịch vụ ngoài...)"
+                    >
+                      <Layers className={`w-3.5 h-3.5 ${effectiveSubTab === 'personnel_types' ? 'text-rose-600' : 'text-slate-400'}`} />
+                      <span>Loại Nhân Sự</span>
+                      <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
+                        {personnelTypes.length}
+                      </span>
+                    </button>
+                  )}
 
-              {currentUser.isSuperAdmin && (
-              <button
-                type="button"
-                onClick={() => setActiveSubTab('settings')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  effectiveSubTab === 'settings'
-                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-                title="Thiết lập thương hiệu, mốc thời gian và phương thức tính điểm"
-              >
-                <Settings className={`w-3.5 h-3.5 ${effectiveSubTab === 'settings' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Thiết Lập Hệ Thống</span>
-              </button>
-              )}
+                  {canAccessAdminSubTab(currentUser, 'statuses') && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('statuses')}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        effectiveSubTab === 'statuses'
+                          ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                      title="Danh mục trạng thái làm việc của nhân sự"
+                    >
+                      <Tag className={`w-3.5 h-3.5 ${effectiveSubTab === 'statuses' ? 'text-rose-600' : 'text-slate-400'}`} />
+                      <span>Trạng Thái</span>
+                      <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
+                        {statuses.length}
+                      </span>
+                    </button>
+                  )}
 
-              {currentUser.isSuperAdmin && (
-              <button
-                type="button"
-                onClick={() => setActiveSubTab('column_headers')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  effectiveSubTab === 'column_headers'
-                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-                title="Đổi tên các cột hiển thị trên danh sách nhân sự"
-              >
-                <Layers className={`w-3.5 h-3.5 ${effectiveSubTab === 'column_headers' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span>Hiển Thị Danh Sách</span>
-              </button>
-              )}
-            </div>
+                  {canAccessAdminSubTab(currentUser, 'column_headers') && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('column_headers')}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        effectiveSubTab === 'column_headers'
+                          ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                      title="Đổi tên các cột và cấu hình trường hiển thị trên danh sách nhân sự"
+                    >
+                      <Layers className={`w-3.5 h-3.5 ${effectiveSubTab === 'column_headers' ? 'text-rose-600' : 'text-slate-400'}`} />
+                      <span>Hiển Thị Cột &amp; Trường</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Nhóm 3: Cấu hình & Đánh giá */}
+            {(canManageCriteria || canAccessAdminSubTab(currentUser, 'settings') || currentUser.isSuperAdmin) && (
+              <div className="space-y-1">
+                <div className="px-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  3. Cấu hình &amp; Đánh giá
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  {canManageCriteria && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('criteria')}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        effectiveSubTab === 'criteria'
+                          ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                      title="Danh mục các tiêu chí đánh giá và trọng số điểm"
+                    >
+                      <Sliders className={`w-3.5 h-3.5 ${effectiveSubTab === 'criteria' ? 'text-rose-600' : 'text-slate-400'}`} />
+                      <span>Tiêu Chí Đánh Giá</span>
+                      <span className="text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
+                        {criteria.length}
+                      </span>
+                    </button>
+                  )}
+
+                  {canAccessAdminSubTab(currentUser, 'settings') && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('settings')}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        effectiveSubTab === 'settings'
+                          ? 'bg-white text-rose-700 shadow-2xs border border-rose-200/80 font-bold'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                      title="Thiết lập thương hiệu, mốc thời gian và phương thức tính điểm"
+                    >
+                      <Settings className={`w-3.5 h-3.5 ${effectiveSubTab === 'settings' ? 'text-rose-600' : 'text-slate-400'}`} />
+                      <span>Thiết Lập Hệ Thống</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
-
-      {/* SUB-TAB 0: LEAVE MANAGEMENT (QUẢN TRỊ NGHỈ PHÉP) */}
-      {effectiveSubTab === 'leave_management' && (
-        <div className="space-y-4">
-          {/* Toast Message */}
-          {leaveToast && (
-            <div
-              className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-xs animate-in fade-in ${
-                leaveToast.type === 'success'
-                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                  : 'bg-rose-50 text-rose-900 border-rose-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {leaveToast.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                )}
-                <span>{leaveToast.message}</span>
-              </div>
-              <button
-                onClick={() => setLeaveToast(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Quick Stat Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-4 bg-white rounded-xl border border-slate-200/90 shadow-2xs space-y-1">
-              <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-purple-600" />
-                <span>Chờ Duyệt</span>
-              </div>
-              <div className="text-2xl font-black text-purple-700">{pendingLeavesCount}</div>
-              <div className="text-[10px] text-slate-400">Đơn cần xem xét</div>
-            </div>
-
-            <div className="p-4 bg-white rounded-xl border border-amber-200/90 shadow-2xs space-y-1">
-              <div className="text-[11px] font-semibold text-amber-700 flex items-center gap-1.5">
-                <span>👑</span>
-                <span>Cần Giám Đốc Duyệt</span>
-              </div>
-              <div className="text-2xl font-black text-amber-700">{directorPendingLeavesCount}</div>
-              <div className="text-[10px] text-slate-400">Nghỉ dài ngày (≥ 3 ngày)</div>
-            </div>
-
-            <div className="p-4 bg-white rounded-xl border border-emerald-200/90 shadow-2xs space-y-1">
-              <div className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1.5">
-                <span>⚡</span>
-                <span>Tự Động Duyệt</span>
-              </div>
-              <div className="text-2xl font-black text-emerald-700">{autoApprovedLeavesCount}</div>
-              <div className="text-[10px] text-slate-400">Đơn 1 ngày còn phép năm</div>
-            </div>
-
-            <div className="p-4 bg-white rounded-xl border border-slate-200/90 shadow-2xs space-y-1">
-              <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-sky-600" />
-                <span>Đã Nghỉ Trong Năm</span>
-              </div>
-              <div className="text-2xl font-black text-sky-700">{approvedLeavesDays} <span className="text-xs font-normal">ngày</span></div>
-              <div className="text-[10px] text-slate-400">Đã chốt trừ phép năm</div>
-            </div>
-          </div>
-
-          {/* Policy Information Box */}
-          <div className="p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-sky-50 border border-purple-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <div className="space-y-1">
-              <div className="font-bold text-purple-950 flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-purple-600 shrink-0" />
-                <span>Quy chế Phê duyệt Nghỉ phép & Tích lũy Phép năm Aura Talent</span>
-              </div>
-              <p className="text-[11px] text-purple-900 leading-relaxed">
-                • <strong>Mới vào (&lt; 12 tháng)</strong>: 1 ngày/tháng thâm niên • <strong>Đủ 12 tháng</strong>: 14 ngày phép năm • <strong>Mỗi năm thêm</strong>: +1 ngày phép.<br />
-                • <strong>Nghỉ 1 ngày</strong>: Tự động phê duyệt nếu còn phép năm • <strong>Nghỉ 2 ngày</strong>: Trưởng Phòng duyệt • <strong>Nghỉ ≥ 3 ngày</strong>: Giám Đốc trực tiếp phê duyệt.
-              </p>
-            </div>
-          </div>
-
-          {/* Filters Bar */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col gap-3">
-            <div className="flex flex-col sm:flex-row items-center gap-3 justify-between">
-              <div className="relative w-full sm:w-80">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={leaveSearch}
-                  onChange={(e) => setLeaveSearch(e.target.value)}
-                  placeholder="Tìm theo tên Idol, nghệ danh, lý do..."
-                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-500 focus:bg-white"
-                />
-              </div>
-
-              {/* Department filter */}
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <span className="text-xs font-semibold text-slate-500 shrink-0">Phòng ban:</span>
-                <select
-                  value={leaveDeptFilter}
-                  onChange={(e) => setLeaveDeptFilter(e.target.value)}
-                  className="w-full sm:w-auto px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-medium text-slate-700"
-                >
-                  <option value="all">Tất cả đơn vị</option>
-                  {departments.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Filter tags */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-slate-500 mr-1">Trạng thái:</span>
-                {[
-                  { id: 'all', label: 'Tất cả' },
-                  { id: 'pending', label: 'Chờ duyệt', count: pendingLeavesCount },
-                  { id: 'approved', label: 'Đã duyệt' },
-                  { id: 'rejected', label: 'Từ chối' }
-                ].map((st) => (
-                  <button
-                    key={st.id}
-                    onClick={() => setLeaveStatusFilter(st.id as any)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      leaveStatusFilter === st.id
-                        ? 'bg-purple-600 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80'
-                    }`}
-                  >
-                    {st.label} {st.count !== undefined && st.count > 0 && `(${st.count})`}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-slate-500 mr-1">Cấp duyệt:</span>
-                {[
-                  { id: 'all', label: 'Tất cả cấp' },
-                  { id: 'director', label: '👑 Giám Đốc (≥ 3 ngày)' },
-                  { id: 'manager', label: '👔 Trưởng Phòng (2 ngày)' },
-                  { id: 'auto', label: '⚡ Tự Động (1 ngày)' }
-                ].map((pol) => (
-                  <button
-                    key={pol.id}
-                    onClick={() => setLeavePolicyFilter(pol.id as any)}
-                    className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                      leavePolicyFilter === pol.id
-                        ? 'bg-slate-800 text-white shadow-2xs'
-                        : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {pol.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Leave Requests List */}
-          <div className="space-y-3">
-            {filteredLeaves.length === 0 ? (
-              <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-2">
-                <CalendarClock className="w-10 h-10 text-slate-300 mx-auto" />
-                <h4 className="text-sm font-bold text-slate-700">Không tìm thấy đơn nghỉ phép nào</h4>
-                <p className="text-xs text-slate-400">
-                  Thử thay đổi bộ lọc tìm kiếm hoặc từ khóa khác
-                </p>
-              </div>
-            ) : (
-              filteredLeaves.map((req) => {
-                const idol = idols.find((i) => i.id === req.idolId);
-                const quota = calculateAnnualLeaveQuota(idol?.joinDate);
-                const tenure = calculateTenure(idol?.joinDate);
-                const isDirectorRequired = req.totalDays >= 3;
-                const canCurrentApprove = isDirectorRequired ? canApproveDirectorLeave(currentUser) : true;
-
-                return (
-                  <div
-                    key={req.id}
-                    className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs hover:shadow-xs transition-all space-y-3"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      {/* Idol info */}
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={idol?.avatarUrl || DEFAULT_BLANK_AVATAR}
-                          alt={req.idolName}
-                          className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0 shadow-2xs"
-                        />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-extrabold text-sm text-slate-900">{req.idolName}</span>
-                            {idol?.realName && (
-                              <span className="text-xs text-slate-400">({idol.realName})</span>
-                            )}
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                              {req.department}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
-                            <span>Thâm niên: <strong>{tenure.shortText}</strong></span>
-                            <span>•</span>
-                            <span title={quota.formulaExplanation} className="text-purple-700 font-medium">
-                              Quỹ phép năm: <strong>{quota.totalDays} ngày</strong> ({quota.formulaExplanation})
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Badges */}
-                      <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        {/* Policy Badge */}
-                        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-                          req.totalDays >= 3
-                            ? 'bg-amber-50 text-amber-800 border-amber-300'
-                            : req.totalDays === 2
-                            ? 'bg-sky-50 text-sky-800 border-sky-300'
-                            : 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                        }`}>
-                          {req.totalDays >= 3
-                            ? '👑 Cần Giám Đốc Duyệt (≥ 3 ngày)'
-                            : req.totalDays === 2
-                            ? '👔 Cần Trưởng Phòng Duyệt'
-                            : '⚡ Tự Động Phê Duyệt'}
-                        </span>
-
-                        {/* Status Badge */}
-                        <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-                          req.status === 'approved'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : req.status === 'rejected'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200'
-                            : 'bg-purple-50 text-purple-700 border-purple-200'
-                        }`}>
-                          {req.status === 'approved' ? '✓ Đã Duyệt' : req.status === 'rejected' ? '✕ Từ Chối' : '⏳ Chờ Duyệt'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Details Box */}
-                    <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/70 space-y-2 text-xs">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 text-slate-700">
-                          <span className="font-bold text-slate-900">
-                            {req.leaveType === 'annual' ? '🌴 Phép Năm' : req.leaveType === 'sick' ? '🏥 Nghỉ Ốm' : '💼 Việc Riêng'}
-                          </span>
-                          <span>•</span>
-                          <span className="font-mono font-bold text-purple-800">
-                            {req.totalDays} ngày ({formatDateVN(req.startDate)} → {formatDateVN(req.endDate)})
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          Nộp ngày: {formatDateVN(req.createdAt?.split('T')[0])}
-                        </span>
-                      </div>
-
-                      {(req.annualLeaveDays !== undefined || req.unpaidLeaveDays !== undefined) && (
-                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-600">
-                          <span>Phép năm: {req.annualLeaveDays ?? 0} ngày</span>
-                          <span>Nghỉ không lương: {req.unpaidLeaveDays ?? 0} ngày</span>
-                          {req.allocationConfirmed && req.unpaidLeaveDays ? <span className="text-amber-700">Đã xác nhận phân bổ</span> : null}
-                        </div>
-                      )}
-
-                      <div className="text-slate-700">
-                        <span className="font-semibold text-slate-500">Lý do nghỉ:</span> {req.reason}
-                      </div>
-
-                      {req.reviewNote && (
-                        <div className="text-[11px] text-slate-600 bg-white p-2 rounded-lg border border-slate-200/80 mt-1">
-                          <strong>Ghi chú duyệt ({req.reviewedBy?.name || 'Hệ thống'}):</strong> {req.reviewNote}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Actions Bar */}
-                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
-                      {req.status === 'pending' && (
-                        <>
-                          {!canCurrentApprove && (
-                            <span className="text-[11px] text-amber-700 font-semibold mr-auto">
-                              ⚠️ Đơn ≥ 3 ngày cần tài khoản Giám Đốc Điều Hành (CEO) duyệt
-                            </span>
-                          )}
-
-                          <button
-                            type="button"
-                            disabled={!canCurrentApprove || processingLeaveId === req.id}
-                            onClick={() =>
-                              setLeaveActionModal({
-                                isOpen: true,
-                                request: req,
-                                mode: 'approve',
-                                note: 'Đồng ý phê duyệt'
-                              })
-                            }
-                            className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg shadow-2xs transition-all cursor-pointer ${
-                              canCurrentApprove
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Phê Duyệt</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={processingLeaveId === req.id}
-                            onClick={() =>
-                              setLeaveActionModal({
-                                isOpen: true,
-                                request: req,
-                                mode: 'reject',
-                                note: ''
-                              })
-                            }
-                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all cursor-pointer"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Từ Chối</span>
-                          </button>
-                        </>
-                      )}
-
-                      {onDeleteLeaveRequest && (
-                        <button
-                          type="button"
-                          onClick={() => onDeleteLeaveRequest(req.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="Xóa bản ghi đơn nghỉ phép"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* SUB-TAB 1: APPROVALS QUEUE */}
-      {effectiveSubTab === 'approvals' && (
-        <div className="space-y-4">
-          {/* Status Toast Banner */}
-          {approvalToast && (
-            <div
-              className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold shadow-xs animate-in fade-in ${
-                approvalToast.type === 'success'
-                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                  : 'bg-rose-50 text-rose-900 border-rose-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {approvalToast.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                )}
-                <span>{approvalToast.message}</span>
-              </div>
-              <button
-                onClick={() => setApprovalToast(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Controls & Search */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={approvalSearch}
-                onChange={(e) => setApprovalSearch(e.target.value)}
-                placeholder="Tìm yêu cầu theo tên, người gửi..."
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500 focus:bg-white"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto">
-              <span className="text-xs font-semibold text-slate-500 mr-1">Bộ lọc:</span>
-              {(['all', 'pending', 'approved', 'rejected'] as const).map((st) => {
-                const label =
-                  st === 'all'
-                    ? 'Tất cả'
-                    : st === 'pending'
-                    ? `Chờ duyệt (${pendingCount})`
-                    : st === 'approved'
-                    ? 'Đã duyệt'
-                    : 'Đã từ chối';
-                return (
-                  <button
-                    key={st}
-                    onClick={() => setApprovalStatusFilter(st)}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                      approvalStatusFilter === st
-                        ? 'bg-rose-600 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Approvals List */}
-          {filteredApprovals.length === 0 ? (
-            <div className="p-12 bg-white rounded-2xl border border-slate-200 text-center space-y-3">
-              <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
-                <FileCheck className="w-6 h-6" />
-              </div>
-              <h3 className="font-bold text-slate-700 text-sm">Không có yêu cầu phê duyệt nào</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Khi các nhân viên cấp dưới (quản lý, giám khảo, trợ lý) thực hiện thêm hoặc xóa nhân sự,
-                các yêu cầu sẽ hiển thị tại đây để Ban Quản Trị xét duyệt.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3">
-              {filteredApprovals.map((req) => {
-                const isPending = req.status === 'pending';
-                const isCreate = req.type === 'create_idol';
-
-                return (
-                  <div
-                    key={req.id}
-                    className={`bg-white rounded-xl border p-4 transition-all shadow-2xs hover:shadow-xs ${
-                      isPending
-                        ? 'border-amber-200 bg-amber-50/10'
-                        : req.status === 'approved'
-                        ? 'border-emerald-200 bg-emerald-50/10'
-                        : 'border-rose-200 bg-rose-50/10'
-                    }`}
-                  >
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      {/* Left: Info */}
-                      <div className="flex items-start gap-3">
-                        {req.data?.avatarUrl ? (
-                          <img
-                            src={req.data.avatarUrl}
-                            alt={req.targetName}
-                            className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0 shadow-2xs"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 text-slate-500 font-bold">
-                            {req.targetName.slice(0, 2).toUpperCase()}
-                          </div>
-                        )}
-
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                                isCreate
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                  : 'bg-rose-100 text-rose-800 border border-rose-200'
-                              }`}
-                            >
-                              {isCreate ? 'Yêu Cầu Thêm Nhân Sự' : 'Yêu Cầu Xóa Nhân Sự'}
-                            </span>
-
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                isPending
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                  : req.status === 'approved'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-rose-100 text-rose-800'
-                              }`}
-                            >
-                              {isPending ? '⏳ Chờ Duyệt (Pending)' : req.status === 'approved' ? '✓ Đã Duyệt' : '✕ Từ Chối'}
-                            </span>
-
-                            <span className="text-[11px] text-slate-400">
-                              {new Date(req.createdAt).toLocaleString('vi-VN')}
-                            </span>
-                          </div>
-
-                          <h3 className="text-sm font-extrabold text-slate-900 mt-1 flex items-center gap-2">
-                            <span>{req.targetName}</span>
-                            {req.data?.realName && (
-                              <span className="text-xs font-normal text-slate-500">({req.data.realName})</span>
-                            )}
-                            {req.data?.department && (
-                              <span className="text-[11px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md">
-                                {req.data.department}
-                              </span>
-                            )}
-                          </h3>
-
-                          <div className="text-xs text-slate-600 mt-1 flex items-center gap-2 flex-wrap">
-                            <span>
-                              Người gửi đề xuất: <strong>{req.requestedBy.name}</strong> ({req.requestedBy.roleTitle})
-                            </span>
-                          </div>
-
-                          {req.reason && (
-                            <p className="text-xs text-slate-500 italic mt-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                              &ldquo;{req.reason}&rdquo;
-                            </p>
-                          )}
-
-                          {req.reviewNote && (
-                            <div className="text-xs text-slate-600 mt-1.5 flex items-center gap-1.5">
-                              <span className="font-semibold text-slate-700">Phản hồi của Admin:</span>
-                              <span className="text-slate-600 font-medium">{req.reviewNote}</span>
-                              {req.reviewedBy && (
-                                <span className="text-[11px] text-slate-400">
-                                  (bởi {req.reviewedBy.name})
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Right: Actions */}
-                      <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                        {req.data && (
-                          <button
-                            onClick={() => setSelectedApprDetail(req)}
-                            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                          >
-                            Xem Chi Tiết
-                          </button>
-                        )}
-
-                        {isPending && (
-                          <>
-                            <button
-                              onClick={() => handleQuickApprove(req)}
-                              disabled={processingApprId === req.id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
-                              title="Duyệt nhanh với ghi chú chuẩn"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Duyệt Nhanh</span>
-                            </button>
-
-                            <button
-                              onClick={() => openApproveModal(req)}
-                              disabled={processingApprId === req.id}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>{isCreate ? 'Duyệt Thêm Roster' : 'Duyệt Xóa Roster'}</span>
-                            </button>
-
-                            <button
-                              onClick={() => openRejectModal(req)}
-                              disabled={processingApprId === req.id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                              <span>Từ Chối</span>
-                            </button>
-                          </>
-                        )}
-
-                        {!isPending && (
-                          <button
-                            onClick={() => onDeleteApproval(req.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Xóa yêu cầu khỏi lịch sử"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* SUB-TAB 2: USERS & DEPARTMENT PERMISSIONS */}
       {effectiveSubTab === 'users' && currentUser.isSuperAdmin && (
@@ -2128,7 +1259,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
   )}
 
       {/* SUB-TAB: PERSONNEL TYPES (Công ty, Outsource, Thực tập sinh, CTV...) */}
-      {effectiveSubTab === 'personnel_types' && currentUser.isSuperAdmin && (
+      {effectiveSubTab === 'personnel_types' && canAccessAdminSubTab(currentUser, 'personnel_types') && (
         <div className="space-y-4">
           <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="relative w-full sm:w-80">
@@ -2282,7 +1413,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       )}
 
       {/* SUB-TAB 3: DEPARTMENTS (CƠ CẤU PHÒNG BAN & NHÓM TRỰC THUỘC) */}
-      {effectiveSubTab === 'departments' && currentUser.isSuperAdmin && (
+      {effectiveSubTab === 'departments' && canAccessAdminSubTab(currentUser, 'departments') && (
         <div className="space-y-4">
           {/* Top Control Bar: Search & Add Unit / Sub-group */}
           <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-wrap items-center gap-3">
@@ -2985,7 +2116,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       )}
 
       {/* SUB-TAB 4: STATUSES */}
-      {effectiveSubTab === 'statuses' && currentUser.isSuperAdmin && (
+      {effectiveSubTab === 'statuses' && canAccessAdminSubTab(currentUser, 'statuses') && (
         <div className="space-y-4">
           <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="relative w-full sm:w-80">
@@ -3088,11 +2219,34 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => onDeleteStatus(st)}
-                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                            title="Xóa trạng thái"
+                            type="button"
+                            disabled={count > 0}
+                            onClick={async () => {
+                              if (count > 0) return;
+                              const ok = await confirmDialog(
+                                `Bạn có chắc chắn muốn xóa trạng thái "${st}"?`,
+                                'Xác nhận xóa trạng thái'
+                              );
+                              if (!ok) return;
+                              try {
+                                await onDeleteStatus(st);
+                                notify(`Đã xóa trạng thái "${st}".`, 'success');
+                              } catch (err: any) {
+                                notify(err?.message || 'Không thể xóa trạng thái', 'error');
+                              }
+                            }}
+                            className={`p-1 rounded transition-colors ${
+                              count > 0
+                                ? 'text-slate-300 cursor-not-allowed'
+                                : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer'
+                            }`}
+                            title={
+                              count > 0
+                                ? `Không thể xóa trực tiếp: đang có ${count} nhân sự sử dụng trạng thái này`
+                                : 'Xóa trạng thái'
+                            }
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {count > 0 ? <Lock className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
                           </button>
                         </>
                       )}
@@ -3225,7 +2379,7 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
       )}
 
       {/* SUB-TAB 6: SYSTEM SETTINGS */}
-      {effectiveSubTab === 'settings' && currentUser.isSuperAdmin && (
+      {effectiveSubTab === 'settings' && canAccessAdminSubTab(currentUser, 'settings') && (
         <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-2xs space-y-6">
           <div>
             <h3 className="text-sm font-extrabold text-slate-900">Cấu Hình Toàn Hệ Thống</h3>
@@ -3236,14 +2390,19 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
           {/* Section 1: Company Logo & Brand Banner */}
           <div className="p-4 bg-gradient-to-br from-slate-50 to-rose-50/30 border border-slate-200 rounded-2xl space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
-                <Palette className="w-4 h-4" />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                  <Palette className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900">1. Nhận Diện Thương Hiệu & Banner</h4>
+                  <p className="text-[11px] text-slate-500">Đổi logo công ty, tên thương hiệu bên trên và khẩu hiệu biểu ngữ thanh điều hướng</p>
+                </div>
               </div>
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">Nhận Diện Thương Hiệu & Banner</h4>
-                <p className="text-[11px] text-slate-500">Đổi logo công ty, tên thương hiệu bên trên và khẩu hiệu biểu ngữ thanh điều hướng</p>
-              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">
+                Phạm vi: Giao diện toàn hệ thống
+              </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3326,11 +2485,16 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Exact Date Reference */}
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-rose-600" />
-                <label className="text-xs font-bold text-slate-800">
-                  Mốc Thời Gian Chuẩn Hệ Thống (Thời Gian Hiện Tại)
-                </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-rose-600" />
+                  <label className="text-xs font-bold text-slate-800">
+                    2. Mốc Thời Gian Chuẩn Hệ Thống (Thời Gian Hiện Tại)
+                  </label>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                  Ảnh hưởng: Ngày gia nhập, Nghỉ phép, Ca trực, Lương
+                </span>
               </div>
 
               <div className="space-y-2.5 pt-1">
@@ -3408,9 +2572,14 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
 
             {/* Score Calculation Mode */}
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-              <label className="block text-xs font-bold text-slate-800">
-                Phương Thức Tính Tổng Điểm (Calculation Mode)
-              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="block text-xs font-bold text-slate-800">
+                  3. Phương Thức Tính Tổng Điểm (Calculation Mode)
+                </label>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
+                  Ảnh hưởng: Bảng Điểm & Xếp Hạng
+                </span>
+              </div>
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer p-2 rounded-lg bg-white border border-slate-200">
                   <input
@@ -3627,6 +2796,11 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {/* SUB-TAB 8: SYSTEM AUDIT LOGS (SUPER ADMIN ONLY) */}
+      {effectiveSubTab === 'audit_logs' && currentUser.isSuperAdmin && (
+        <AdminAuditLogPanel />
       )}
 
       {/* USER EDIT / CREATE MODAL */}
@@ -3958,16 +3132,17 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                         <span>Các Mục Được Phép Xem & Truy Cập (Tabs)</span>
                       </label>
                       <span className="text-[11px] font-semibold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
-                        {editingUser.allowedTabs?.length || 0} / {TAB_OPTIONS.length} mục
+                        {editingUser.allowedTabs?.length || 0} / {TAB_PERMISSION_OPTIONS.length} mục
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {TAB_OPTIONS.map((t) => {
+                      {TAB_PERMISSION_OPTIONS.map((t) => {
                         const checked = editingUser.allowedTabs?.includes(t.id);
                         return (
                           <label
                             key={t.id}
+                            title={t.desc}
                             className={`flex items-center gap-2.5 text-xs p-2.5 rounded-xl border cursor-pointer transition-colors ${
                               checked
                                 ? 'bg-rose-50/70 text-rose-950 border-rose-300 font-semibold shadow-2xs'
@@ -4005,16 +3180,17 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                         <span>Hành Động Thao Tác Được Phép (Actions)</span>
                       </label>
                       <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                        {editingUser.allowedActions?.length || 0} / {ACTION_OPTIONS.length} quyền
+                        {editingUser.allowedActions?.length || 0} / {ACTION_PERMISSION_OPTIONS.length} quyền
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {ACTION_OPTIONS.map((a) => {
+                      {ACTION_PERMISSION_OPTIONS.map((a) => {
                         const checked = editingUser.allowedActions?.includes(a.id);
                         return (
                           <label
                             key={a.id}
+                            title={a.desc}
                             className={`flex items-center gap-2.5 text-xs p-2.5 rounded-xl border cursor-pointer transition-colors ${
                               checked
                                 ? 'bg-indigo-50/70 text-indigo-950 border-indigo-300 font-semibold shadow-2xs'
@@ -4200,371 +3376,6 @@ export const AdminPortalView: React.FC<AdminPortalViewProps> = ({
                 className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-xl shadow-xs transition-colors cursor-pointer"
               >
                 Lưu Tiêu Chí
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* APPROVAL DETAIL MODAL */}
-      {selectedApprDetail && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] p-4 sm:p-6 shadow-xl border border-slate-200 space-y-4 overflow-y-auto min-h-0 my-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <FileCheck className="w-4 h-4 text-emerald-600" />
-                <span>Chi Tiết Hồ Sơ Đề Xuất Phê Duyệt</span>
-              </h3>
-              <button
-                onClick={() => setSelectedApprDetail(null)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                {selectedApprDetail.data?.avatarUrl ? (
-                  <img
-                    src={selectedApprDetail.data.avatarUrl}
-                    alt={selectedApprDetail.targetName}
-                    className="w-14 h-14 rounded-xl object-cover border border-slate-200 shrink-0 shadow-2xs"
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-xl bg-slate-200 flex items-center justify-center font-bold text-slate-600 text-base">
-                    {selectedApprDetail.targetName.slice(0, 2)}
-                  </div>
-                )}
-                <div>
-                  <h4 className="font-extrabold text-slate-900 text-sm">
-                    {selectedApprDetail.targetName}
-                  </h4>
-                  <p className="text-slate-500 font-medium">
-                    Tên thật: {selectedApprDetail.data?.realName || 'Chưa cung cấp'}
-                  </p>
-                  <p className="text-slate-500">
-                    Đơn vị: <strong>{selectedApprDetail.data?.department}</strong>
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px]">Ngày sinh</span>
-                  <span className="font-semibold text-slate-800">
-                    {formatDateVN(selectedApprDetail.data?.dob) || 'N/A'}
-                  </span>
-                </div>
-                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px]">Nghề nghiệp / Vai trò</span>
-                  <span className="font-semibold text-slate-800">
-                    {selectedApprDetail.data?.role || 'N/A'}
-                  </span>
-                </div>
-                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px]">Chiều cao / Cân nặng</span>
-                  <span className="font-semibold text-slate-800">
-                    {selectedApprDetail.data?.height || 0}cm · {selectedApprDetail.data?.weight || 0}kg
-                  </span>
-                </div>
-                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px]">Quê quán / Nơi sống</span>
-                  <span className="font-semibold text-slate-800">
-                    {selectedApprDetail.data?.hometown} / {selectedApprDetail.data?.currentLiving}
-                  </span>
-                </div>
-              </div>
-
-              {selectedApprDetail.data?.bio && (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <span className="text-slate-400 block text-[10px] mb-0.5">Tiểu sử & Giới thiệu</span>
-                  <p className="text-slate-700 leading-relaxed">{selectedApprDetail.data.bio}</p>
-                </div>
-              )}
-
-              {selectedApprDetail.reason && (
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
-                  <span className="text-amber-700 font-bold block text-[10px] mb-0.5">Lý do đề xuất từ cấp dưới</span>
-                  <p className="text-amber-900 italic">&ldquo;{selectedApprDetail.reason}&rdquo;</p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setSelectedApprDetail(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-              >
-                Đóng
-              </button>
-              {selectedApprDetail.status === 'pending' && (
-                <>
-                  <button
-                    onClick={() => {
-                      const req = selectedApprDetail;
-                      setSelectedApprDetail(null);
-                      openApproveModal(req);
-                    }}
-                    className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-xs transition-colors cursor-pointer"
-                  >
-                    Duyệt Yêu Cầu
-                  </button>
-                  <button
-                    onClick={() => {
-                      const req = selectedApprDetail;
-                      setSelectedApprDetail(null);
-                      openRejectModal(req);
-                    }}
-                    className="px-4 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer"
-                  >
-                    Từ Chối
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* APPROVAL / REJECTION INTERACTIVE ACTION MODAL */}
-      {approvalModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 overflow-y-auto min-h-0 my-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                {approvalModal.mode === 'approve' ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Phê Duyệt Yêu Cầu Nhân Sự</span>
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="w-4 h-4 text-rose-600" />
-                    <span>Từ Chối Yêu Cầu Nhân Sự</span>
-                  </>
-                )}
-              </h3>
-              <button
-                onClick={() => setApprovalModal(null)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div
-                className={`p-3 rounded-xl border ${
-                  approvalModal.mode === 'approve'
-                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
-                    : 'bg-rose-50/80 border-rose-200 text-rose-950'
-                }`}
-              >
-                <div className="font-extrabold text-sm mb-1">{approvalModal.request.targetName}</div>
-                <div className="text-[11px] opacity-80">
-                  {approvalModal.request.type === 'create_idol' ? 'Yêu cầu thêm mới nhân sự' : 'Yêu cầu xóa nhân sự'}
-                  {' · '}Đề xuất bởi: <strong>{approvalModal.request.requestedBy.name}</strong> ({approvalModal.request.requestedBy.roleTitle})
-                </div>
-                {approvalModal.request.reason && (
-                  <div className="mt-2 text-[11px] italic bg-white/80 p-2 rounded-lg border border-slate-200/60">
-                    Lý do đề xuất: &ldquo;{approvalModal.request.reason}&rdquo;
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {approvalModal.mode === 'approve' ? 'Ghi chú phê duyệt của Ban Quản Trị:' : 'Lý do từ chối yêu cầu:'}
-                </label>
-                <textarea
-                  rows={3}
-                  value={approvalModal.note}
-                  onChange={(e) => setApprovalModal({ ...approvalModal, note: e.target.value })}
-                  placeholder={
-                    approvalModal.mode === 'approve'
-                      ? 'Nhập căn cứ hoặc ghi chú phê duyệt...'
-                      : 'Nhập lý do không chấp thuận...'
-                  }
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 focus:bg-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setApprovalModal(null)}
-                disabled={processingApprId === approvalModal.request.id}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer disabled:opacity-50"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                onClick={handleConfirmApprovalModal}
-                disabled={processingApprId === approvalModal.request.id}
-                className={`px-4 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 ${
-                  approvalModal.mode === 'approve'
-                    ? 'bg-emerald-600 hover:bg-emerald-500'
-                    : 'bg-rose-600 hover:bg-rose-500'
-                }`}
-              >
-                {processingApprId === approvalModal.request.id ? (
-                  <span>Đang xử lý...</span>
-                ) : (
-                  <>
-                    {approvalModal.mode === 'approve' ? (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <XCircle className="w-3.5 h-3.5" />
-                    )}
-                    <span>{approvalModal.mode === 'approve' ? 'Xác Nhận Phê Duyệt' : 'Xác Nhận Từ Chối'}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Leave Request Approval / Rejection Modal */}
-      {leaveActionModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 overflow-y-auto min-h-0 my-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                {leaveActionModal.mode === 'approve' ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Phê Duyệt Đơn Nghỉ Phép</span>
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="w-4 h-4 text-rose-600" />
-                    <span>Từ Chối Đơn Nghỉ Phép</span>
-                  </>
-                )}
-              </h3>
-              <button
-                onClick={() => setLeaveActionModal(null)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              {/* Request Info Card */}
-              <div
-                className={`p-3.5 rounded-xl border ${
-                  leaveActionModal.mode === 'approve'
-                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
-                    : 'bg-rose-50/80 border-rose-200 text-rose-950'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="font-extrabold text-sm">{leaveActionModal.request.idolName}</div>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/80 border border-slate-200">
-                    {leaveActionModal.request.department}
-                  </span>
-                </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-                  <span className="font-semibold">
-                    📅 {formatDateVN(leaveActionModal.request.startDate)} → {formatDateVN(leaveActionModal.request.endDate)}
-                  </span>
-                  <span className="font-extrabold text-rose-600 bg-white px-2 py-0.5 rounded-md border border-rose-200">
-                    {leaveActionModal.request.totalDays} ngày nghỉ
-                  </span>
-                  <span className="text-slate-600">
-                    Loại: {leaveActionModal.request.leaveType === 'annual' ? 'Phép năm' : leaveActionModal.request.leaveType === 'sick' ? 'Nghỉ ốm' : 'Nghỉ không lương'}
-                  </span>
-                </div>
-
-                {(leaveActionModal.request.annualLeaveDays !== undefined || leaveActionModal.request.unpaidLeaveDays !== undefined) && (
-                  <div className="mt-1.5 text-[11px] font-semibold text-slate-700">
-                    Phân bổ: {leaveActionModal.request.annualLeaveDays ?? 0} ngày phép năm · {leaveActionModal.request.unpaidLeaveDays ?? 0} ngày nghỉ không lương
-                  </div>
-                )}
-
-                {leaveActionModal.request.reason && (
-                  <div className="mt-2.5 text-[11px] bg-white/90 p-2.5 rounded-lg border border-slate-200/70 text-slate-700 italic">
-                    Lý do: &ldquo;{leaveActionModal.request.reason}&rdquo;
-                  </div>
-                )}
-              </div>
-
-              {/* Policy Restriction Check */}
-              {leaveActionModal.mode === 'approve' && leaveActionModal.request.totalDays >= 3 && !canApproveDirectorLeave(currentUser) ? (
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-amber-900 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-bold text-amber-950">Quy định thẩm quyền phê duyệt:</div>
-                    <div>
-                      Đơn xin nghỉ từ <strong>3 ngày trở lên</strong> bắt buộc phải do <strong>Ban Giám Đốc</strong> phê duyệt.
-                      Tài khoản của bạn ({currentUser.name} - {currentUser.roleTitle}) không có thẩm quyền phê duyệt đơn này.
-                    </div>
-                  </div>
-                </div>
-              ) : leaveActionModal.mode === 'approve' && leaveActionModal.request.totalDays >= 3 ? (
-                <div className="p-2.5 bg-purple-50 rounded-lg border border-purple-200 text-purple-900 text-[11px] flex items-center gap-1.5">
-                  <ShieldAlert className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                  <span>Đơn này từ 3 ngày trở lên, phê duyệt với thẩm quyền <strong>Ban Giám Đốc</strong>.</span>
-                </div>
-              ) : null}
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {leaveActionModal.mode === 'approve' ? 'Ghi chú phê duyệt nghỉ phép:' : 'Lý do từ chối đơn nghỉ:'}
-                </label>
-                <textarea
-                  rows={3}
-                  value={leaveActionModal.note}
-                  onChange={(e) => setLeaveActionModal({ ...leaveActionModal, note: e.target.value })}
-                  placeholder={
-                    leaveActionModal.mode === 'approve'
-                      ? 'Nhập ghi chú hoặc yêu cầu bàn giao công việc...'
-                      : 'Nhập lý do chưa chấp thuận đơn nghỉ...'
-                  }
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 focus:bg-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setLeaveActionModal(null)}
-                disabled={processingLeaveId === leaveActionModal.request.id}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer disabled:opacity-50"
-              >
-                Hủy Bỏ
-              </button>
-              <button
-                type="button"
-                onClick={handleExecuteLeaveAction}
-                disabled={
-                  processingLeaveId === leaveActionModal.request.id ||
-                  (leaveActionModal.mode === 'approve' &&
-                    leaveActionModal.request.totalDays >= 3 &&
-                    !canApproveDirectorLeave(currentUser))
-                }
-                className={`px-4 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 ${
-                  leaveActionModal.mode === 'approve'
-                    ? 'bg-emerald-600 hover:bg-emerald-500'
-                    : 'bg-rose-600 hover:bg-rose-500'
-                }`}
-              >
-                {processingLeaveId === leaveActionModal.request.id ? (
-                  <span>Đang xử lý...</span>
-                ) : (
-                  <>
-                    {leaveActionModal.mode === 'approve' ? (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <XCircle className="w-3.5 h-3.5" />
-                    )}
-                    <span>{leaveActionModal.mode === 'approve' ? 'Xác Nhận Phê Duyệt' : 'Xác Nhận Từ Chối'}</span>
-                  </>
-                )}
               </button>
             </div>
           </div>

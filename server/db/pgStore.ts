@@ -58,7 +58,7 @@ import { classifyPayrollSnapshot } from '../../src/utils/payrollSnapshotStatus.t
 import { assertPayrollApprovalAllowed, assertPayrollLockAllowed, assertPayrollSubmitAllowed } from '../../src/utils/payrollWorkflowPermissions.ts';
 import { canCancelPayrollDispute, canReviewPayrollDispute, canSubmitPayrollDispute } from '../../src/utils/payrollDisputePolicy.ts';
 import { getPayrollCalendarDates, canSubmitOrApprovePayroll, canLockOrPayPayroll } from '../../src/utils/payrollCalendar.ts';
-import { calculatePayrollDeductions } from '../../src/utils/payrollDeductions.ts';
+import { calculatePayrollDeductions, recalculatePayrollRecordFinancials } from '../../src/utils/payrollDeductions.ts';
 import { isTaskCategoryAllowedForActivity, isTaskCategoryAllowedForIdol } from '../../src/utils/taskTaxonomy.ts';
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
@@ -718,6 +718,165 @@ export const pgStore = {
       metadata: data.metadata as Prisma.InputJsonValue | undefined,
     };
     await prisma.auditLog.create({ data: createData });
+  },
+
+  async getAuditLogs(options: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    method?: string;
+    resource?: string;
+    statusCode?: number;
+    category?: 'all' | 'data' | 'auth';
+    statusGroup?: 'all' | '2xx' | '4xx_5xx';
+    fromDate?: string;
+    toDate?: string;
+  } = {}): Promise<{
+    items: Array<{
+      id: string;
+      requestId: string;
+      actorUserId?: string;
+      actorUsername?: string;
+      actorName?: string;
+      actorRole?: string;
+      method: string;
+      path: string;
+      action: string;
+      resource: string;
+      resourceId?: string;
+      statusCode: number;
+      metadata: Record<string, unknown> | null;
+      createdAt: string;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(1, Math.floor(Number(options.page) || 1));
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(options.limit) || 25)));
+    const search = options.search?.trim();
+    const method = options.method?.trim().toUpperCase();
+    const resource = options.resource?.trim();
+    const statusCode = Number.isInteger(options.statusCode) ? options.statusCode : undefined;
+    const category = options.category || 'all';
+    const statusGroup = options.statusGroup || 'all';
+    const fromDate = options.fromDate?.trim();
+    const toDate = options.toDate?.trim();
+
+    const where: Prisma.AuditLogWhereInput = {};
+    if (method && method !== 'ALL') {
+      where.method = method;
+    }
+    if (resource && resource !== 'all') {
+      where.resource = resource;
+    } else if (category === 'auth') {
+      where.resource = 'auth';
+    } else if (category === 'data') {
+      where.resource = { not: 'auth' };
+    }
+
+    if (statusCode && statusCode > 0) {
+      where.statusCode = statusCode;
+    } else if (statusGroup === '2xx') {
+      where.statusCode = { gte: 200, lt: 300 };
+    } else if (statusGroup === '4xx_5xx') {
+      where.statusCode = { gte: 400 };
+    }
+
+    if ((fromDate && /^\d{4}-\d{2}-\d{2}$/.test(fromDate)) || (toDate && /^\d{4}-\d{2}-\d{2}$/.test(toDate))) {
+      const createdAtFilter: Prisma.DateTimeFilter = {};
+      if (fromDate && /^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
+        createdAtFilter.gte = new Date(`${fromDate}T00:00:00+07:00`);
+      }
+      if (toDate && /^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+        createdAtFilter.lte = new Date(`${toDate}T23:59:59.999+07:00`);
+      }
+      where.createdAt = createdAtFilter;
+    }
+    if (search) {
+      where.OR = [
+        { requestId: { contains: search, mode: 'insensitive' } },
+        { path: { contains: search, mode: 'insensitive' } },
+        { action: { contains: search, mode: 'insensitive' } },
+        { resource: { contains: search, mode: 'insensitive' } },
+        { resourceId: { contains: search, mode: 'insensitive' } },
+        {
+          actorUser: {
+            OR: [
+              { username: { contains: search, mode: 'insensitive' } },
+              { roleTitle: { contains: search, mode: 'insensitive' } },
+              {
+                personnelProfile: {
+                  OR: [
+                    { realName: { contains: search, mode: 'insensitive' } },
+                    { stageName: { contains: search, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      ];
+    }
+
+    const [total, rows] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        include: {
+          actorUser: {
+            select: {
+              id: true,
+              username: true,
+              role: true,
+              roleTitle: true,
+              personnelProfile: {
+                select: {
+                  realName: true,
+                  stageName: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      items: rows.map((row) => {
+        const profile = row.actorUser?.personnelProfile;
+        const actorName = profile
+          ? (profile.realName && profile.stageName && profile.realName !== profile.stageName
+              ? `${profile.realName} (${profile.stageName})`
+              : (profile.realName || profile.stageName || undefined))
+          : (row.actorUser?.roleTitle || row.actorUser?.username || undefined);
+
+        return {
+          id: row.id,
+          requestId: row.requestId,
+          actorUserId: row.actorUserId !== null && row.actorUserId !== undefined ? String(row.actorUserId) : undefined,
+          actorUsername: row.actorUser?.username || undefined,
+          actorName,
+          actorRole: row.actorUser?.role || undefined,
+          method: row.method,
+          path: row.path,
+          action: row.action,
+          resource: row.resource,
+          resourceId: row.resourceId || undefined,
+          statusCode: row.statusCode,
+          metadata: (row.metadata as Record<string, unknown> | null) ?? null,
+          createdAt: row.createdAt.toISOString(),
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
   },
   // ==========================================
   // 1. PERSONNEL / IDOLS
@@ -1681,8 +1840,17 @@ export const pgStore = {
   },
 
   async deleteStatus(name: string): Promise<string[]> {
+    const trimmed = name.trim();
+    const inUseCount = await prisma.personnel.count({
+      where: { status: trimmed },
+    });
+    if (inUseCount > 0) {
+      throw new Error(
+        `Không thể xóa trạng thái "${trimmed}" vì đang có ${inUseCount} nhân sự sử dụng. Vui lòng chuyển trạng thái của các nhân sự đó trước.`
+      );
+    }
     await prisma.systemLookup.deleteMany({
-      where: { type: 'status', value: name }
+      where: { type: 'status', value: trimmed }
     });
     return this.getStatuses();
   },
@@ -2807,6 +2975,8 @@ export const pgStore = {
           targetPersonnelIdNum = Number(createdIdol.id);
         }
       }
+    } else if (approval.type === 'update_idol' && targetPersonnelIdNum && !isNaN(targetPersonnelIdNum)) {
+      await this.updateIdol(String(targetPersonnelIdNum), approvalData, reviewer, db);
     } else if (approval.type === 'delete_idol' && approval.targetPersonnelId) {
       deletedIdolId = String(approval.targetPersonnelId);
       await this.deleteIdol(deletedIdolId, db);
@@ -3107,9 +3277,15 @@ export const pgStore = {
     const cleanPeriod = periodId.startsWith('payroll-') ? periodId : `payroll-${periodId}`;
     const where: any = { periodId: cleanPeriod };
     if (filter?.department) where.department = filter.department;
+    const personnelWhere: any = { ...businessPersonnelRelation };
+    if (filter?.userId !== undefined && filter.userId !== '') {
+      const uid = Number(filter.userId);
+      if (!Number.isInteger(uid) || uid <= 0) return [];
+      personnelWhere.userId = uid;
+    }
 
     const records = await prisma.payrollRecord.findMany({
-      where: { ...where, personnel: businessPersonnelRelation },
+      where: { ...where, personnel: personnelWhere },
       include: {
         personnel: { include: { user: true } },
         periodRel: { select: { status: true } }
@@ -3291,42 +3467,32 @@ export const pgStore = {
     if (record.periodId !== cleanPeriodId) throw new Error('Phieu luong khong thuoc ky duoc chon');
     assertPayrollPeriodMutable(record.periodRel.status);
 
-    const earnings = { ...((record.earningsDetail as any) || {}), ...(updates.earnings || {}) };
-    const deductions = { ...((record.deductionsDetail as any) || {}), ...(updates.deductions || {}) };
-    const contractSalary = Number(earnings.contractBaseSalary) || Number(record.contractSalarySnapshot) || 0;
+    const rawEarnings = { ...((record.earningsDetail as any) || {}), ...(updates.earnings || {}) };
+    const rawDeductions = { ...((record.deductionsDetail as any) || {}), ...(updates.deductions || {}) };
+    const contractSalary = Number(rawEarnings.contractBaseSalary) || Number(record.contractSalarySnapshot) || 0;
 
-    // Tính lại totalGross và netSalary
+    // Tax and insurance are system-calculated; KPI, commission, gifts, allowance and other taxable earnings are included in TNCN.
+    const {
+      earnings,
+      deductions,
+      totalGross,
+      totalDeductions,
+      netSalary,
+      companyInsurance,
+      companyLaborCost
+    } = recalculatePayrollRecordFinancials({
+      earnings: rawEarnings,
+      deductions: rawDeductions,
+      contractSalary,
+      personnelType: record.personnelType
+    });
+
     const baseSal = Number(earnings.baseSalary) || 0;
     const ot = Number(earnings.overtimePay) || 0;
     const kpi = Number(earnings.kpiBonus) || 0;
     const gmv = Number(earnings.commissionGmv) || 0;
     const gift = Number(earnings.giftShare) || 0;
-    const allow = Number(earnings.allowance) || 0;
     const hot = Number(earnings.hotBonus) || 0;
-    const other = Number(earnings.otherBonus) || 0;
-    const totalGross = baseSal + ot + kpi + gmv + gift + allow + hot + other;
-    earnings.totalGross = totalGross;
-
-    const automaticDeductions = calculatePayrollDeductions({
-      contractSalary,
-      taxableIncome: totalGross,
-      personnelType: record.personnelType
-    });
-    // Tax and insurance are system-calculated; client values are ignored.
-    // KPI, commission, gifts, allowance and other taxable earnings are included in TNCN.
-    deductions.tax = automaticDeductions.tax;
-    deductions.insurance = automaticDeductions.employeeInsurance;
-
-    const penalty = Number(deductions.liveHoursPenalty) || 0;
-    const unpaid = Number(deductions.unpaidLeaveDeduction) || 0;
-    const adv = Number(deductions.advancePayment) || 0;
-    const tax = Number(deductions.tax) || 0;
-    const ins = Number(deductions.insurance) || 0;
-    const otherDed = Number(deductions.otherDeduction) || 0;
-    const totalDeductions = penalty + unpaid + adv + tax + ins + otherDed;
-    deductions.totalDeductions = totalDeductions;
-
-    const netSalary = Math.max(0, totalGross - totalDeductions);
 
     // Ghi nhật ký điều chỉnh
     const oldLogs = ((record.adjustmentLogs as any[]) || []);
@@ -3338,9 +3504,6 @@ export const pgStore = {
       reason: updates.reason || 'Kế toán điều chỉnh phiếu lương'
     };
     const adjustmentLogs = [...oldLogs, newLog];
-
-    const companyInsurance = automaticDeductions.companyInsurance;
-    const companyLaborCost = totalGross + companyInsurance;
 
     const updated = await prisma.payrollRecord.update({
       where: { id: recordId },
@@ -5161,60 +5324,86 @@ export const pgStore = {
     if (!payrollPeriod) throw new Error('Khong tao duoc ky luong de dong bo doanh thu');
     assertPayrollPeriodMutable(payrollPeriod.status);
 
-    let updatedRecordsCount = 0;
-    for (const [pIdStr, amounts] of Object.entries(personnelTotals)) {
-      const pId = Number(pIdStr);
-      const record = await prisma.payrollRecord.findFirst({
-        where: {
-          periodId,
-          personnelId: pId
-        }
-      });
+    const txIds = payrollTransactions.map(t => t.id);
+    const syncedAt = new Date();
+    const updatedRecordsCount = await prisma.$transaction(async (tx) => {
+      let count = 0;
+      for (const [pIdStr, amounts] of Object.entries(personnelTotals)) {
+        const pId = Number(pIdStr);
+        const record = await tx.payrollRecord.findFirst({
+          where: {
+            periodId,
+            personnelId: pId
+          }
+        });
+        if (!record) continue;
 
-      if (record) {
-        const baseSalary = num(record.baseSalary);
-        const overtimePay = num(record.overtimePay);
-        const kpiBonus = num(record.kpiBonus);
-        const hotBonus = num(record.hotBonus);
-        const totalDeductions = num(record.totalDeductions);
+        const existingEarnings = (record.earningsDetail as any) || {};
+        const existingDeductions = (record.deductionsDetail as any) || {};
+        const contractSalary = Number(existingEarnings.contractBaseSalary) || num(record.contractSalarySnapshot) || 0;
 
-        const newCommissionGmv = amounts.commissionGmv;
-        const newGiftShare = amounts.giftShare;
-        const newGross = baseSalary + overtimePay + kpiBonus + newCommissionGmv + newGiftShare + hotBonus;
-        const newNet = Math.max(0, newGross - totalDeductions);
+        const nextCommissionGmv = amounts.commissionGmv;
+        const nextGiftShare = amounts.giftShare;
 
-        const logs = (record.adjustmentLogs as any[]) || [];
-        logs.push({
-          timestamp: new Date().toISOString(),
-          actor: 'Hệ thống Doanh Thu (Auto-Sync)',
-          note: `Đồng bộ hoa hồng từ phân hệ Doanh thu: +${newCommissionGmv.toLocaleString('vi-VN')}đ (commissionGmv), +${newGiftShare.toLocaleString('vi-VN')}đ (giftShare)`
+        const {
+          earnings,
+          deductions,
+          totalGross: newGross,
+          totalDeductions: newTotalDeductions,
+          netSalary: newNet,
+          companyInsurance,
+          companyLaborCost
+        } = recalculatePayrollRecordFinancials({
+          earnings: {
+            ...existingEarnings,
+            baseSalary: existingEarnings.baseSalary ?? num(record.baseSalary),
+            overtimePay: existingEarnings.overtimePay ?? num(record.overtimePay),
+            kpiBonus: existingEarnings.kpiBonus ?? num(record.kpiBonus),
+            hotBonus: existingEarnings.hotBonus ?? num(record.hotBonus),
+            commissionGmv: nextCommissionGmv,
+            giftShare: nextGiftShare
+          },
+          deductions: existingDeductions,
+          contractSalary,
+          personnelType: record.personnelType
         });
 
-        await prisma.payrollRecord.update({
+        const logs = Array.isArray(record.adjustmentLogs) ? [...(record.adjustmentLogs as any[])] : [];
+        logs.push({
+          timestamp: syncedAt.toISOString(),
+          actor: userAccountId ? `User #${userAccountId} (Revenue Auto-Sync)` : 'Hệ thống Doanh Thu (Auto-Sync)',
+          note: `Đồng bộ hoa hồng từ phân hệ Doanh thu: +${nextCommissionGmv.toLocaleString('vi-VN')}đ (commissionGmv), +${nextGiftShare.toLocaleString('vi-VN')}đ (giftShare)`
+        });
+
+        await tx.payrollRecord.update({
           where: { id: record.id },
           data: {
-            commissionGmv: new Prisma.Decimal(newCommissionGmv),
-            giftShare: new Prisma.Decimal(newGiftShare),
+            commissionGmv: new Prisma.Decimal(nextCommissionGmv),
+            giftShare: new Prisma.Decimal(nextGiftShare),
             totalGross: new Prisma.Decimal(newGross),
+            totalDeductions: new Prisma.Decimal(newTotalDeductions),
             netSalary: new Prisma.Decimal(newNet),
+            companyInsurance: new Prisma.Decimal(companyInsurance),
+            companyLaborCost: new Prisma.Decimal(companyLaborCost),
+            earningsDetail: earnings,
+            deductionsDetail: deductions,
             adjustmentLogs: logs
           }
         });
-        updatedRecordsCount++;
+        count++;
       }
-    }
 
-    const txIds = payrollTransactions.map(t => t.id);
-    await prisma.revenueTransaction.updateMany({
-      where: { id: { in: txIds } },
-      data: {
-        status: 'synced_to_payroll',
-        syncedAt: new Date()
-      }
+      await tx.revenueTransaction.updateMany({
+        where: { id: { in: txIds } },
+        data: {
+          status: 'synced_to_payroll',
+          syncedAt
+        }
+      });
+
+      await this.recalculatePeriodTotals(periodId, tx);
+      return count;
     });
-
-    // Recalculate macro period totals
-    await this.recalculatePeriodTotals(periodId);
 
     return {
       syncedCount: payrollTransactions.length,
@@ -5472,18 +5661,19 @@ export const pgStore = {
     }
   },
 
-  async getFinancePnLSummary(scope: 'month' | 'quarter' | 'year' | 'all' = 'month', periodRef: string = '2026-10'): Promise<FinancePnLSummary> {
+  async getFinancePnLSummary(scope: 'month' | 'quarter' | 'year' | 'all' = 'month', periodRef?: string): Promise<FinancePnLSummary> {
+    const resolvedPeriodRef = periodRef || (await getEffectiveSystemDate()).toISOString().slice(0, 7);
     // 1. Resolve list of periods YYYY-MM
     let periodList: string[] | null = null;
     if (scope === 'month') {
-      periodList = [periodRef];
+      periodList = [resolvedPeriodRef];
     } else if (scope === 'quarter') {
-      const [year, qPart] = (periodRef || '2026-Q4').split('-');
+      const [year, qPart] = resolvedPeriodRef.split('-');
       const qNum = Number((qPart || 'Q4').replace('Q', '')) || 4;
       const startM = (qNum - 1) * 3 + 1;
       periodList = [startM, startM + 1, startM + 2].map(m => `${year}-${String(m).padStart(2, '0')}`);
     } else if (scope === 'year') {
-      const year = periodRef || '2026';
+      const year = resolvedPeriodRef;
       periodList = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
     } else {
       periodList = null; // 'all'
@@ -5598,6 +5788,7 @@ export const pgStore = {
         dynamicEventCost += amount;
       } else if (exp.category === 'LABOR_INSURANCE') {
         companyInsurancePaid += amount;
+        totalCompanyLaborCost += amount;
       } else {
         otherExpenses += amount;
       }
@@ -5614,7 +5805,7 @@ export const pgStore = {
 
     return {
       scope,
-      periodRef,
+      periodRef: resolvedPeriodRef,
       revenue: {
         grossRevenue,
         platformFees,
@@ -5653,11 +5844,14 @@ export const pgStore = {
     };
   },
 
-  async getFinanceTrendSeries(periodRef: string = '2025-10', count: number = 6): Promise<FinanceTrendData> {
-    // 1. Generate list of consecutive periods ending at periodRef
-    const [refYStr, refMStr] = (periodRef && periodRef.length >= 7 ? periodRef : '2025-10').split('-');
-    let refY = Number(refYStr) || 2025;
-    let refM = Number(refMStr) || 10;
+  async getFinanceTrendSeries(periodRef?: string, count: number = 6): Promise<FinanceTrendData> {
+    const resolvedPeriodRef = periodRef && periodRef.length >= 7
+      ? periodRef
+      : (await getEffectiveSystemDate()).toISOString().slice(0, 7);
+    // 1. Generate list of consecutive periods ending at resolvedPeriodRef
+    const [refYStr, refMStr] = resolvedPeriodRef.split('-');
+    let refY = Number(refYStr) || new Date().getFullYear();
+    let refM = Number(refMStr) || new Date().getMonth() + 1;
 
     const periods: string[] = [];
     for (let i = count - 1; i >= 0; i--) {
@@ -5719,7 +5913,7 @@ export const pgStore = {
 
     return {
       series,
-      currentPeriod: curr?.period || periodRef,
+      currentPeriod: curr?.period || resolvedPeriodRef,
       previousPeriod: prev?.period || null,
       growth: {
         revenueGrowthPercent,

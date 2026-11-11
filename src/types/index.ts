@@ -361,7 +361,7 @@ export type AppSettingsUpdate = Partial<AppSettings> & {
   resetReferenceClockAnchor?: boolean;
 };
 
-export type AppTabPermission = 'roster' | 'scoring' | 'leaderboard' | 'schedule' | 'tasks' | 'analytics' | 'admin' | 'my_dashboard' | 'work_assignments' | 'payroll' | 'payroll_disputes' | 'kpi' | 'revenue' | 'finance' | 'service_usage';
+export type AppTabPermission = 'roster' | 'scoring' | 'leaderboard' | 'schedule' | 'tasks' | 'analytics' | 'admin' | 'approvals' | 'my_dashboard' | 'work_assignments' | 'payroll' | 'payroll_disputes' | 'kpi' | 'revenue' | 'finance' | 'service_usage';
 
 export type AppActionPermission =
   | 'manage_idols'        // Thêm, sửa, xóa hồ sơ nhân sự
@@ -1072,6 +1072,31 @@ export interface FinanceTrendData {
     netProfitGrowthPercent: number | null; // % tăng trưởng lợi nhuận ròng
     netMarginDiffPercent: number | null;  // Điểm % thay đổi biên lợi nhuận ròng
   };
+}
+
+export interface AuditLogEntry {
+  id: string;
+  requestId: string;
+  actorUserId?: string;
+  actorUsername?: string;
+  actorName?: string;
+  actorRole?: string;
+  method: string;
+  path: string;
+  action: string;
+  resource: string;
+  resourceId?: string;
+  statusCode: number;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface AuditLogPage {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 export * from './roles.ts';

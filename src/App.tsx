@@ -22,9 +22,10 @@ import {
   DEFAULT_BLANK_AVATAR
 } from './types/index.ts';
 import { api } from './services/api.ts';
-import { canAccessAdminPortal } from './utils/adminAccess.ts';
+import { canAccessAdminPortal, canAccessApprovalCenter } from './utils/adminAccess.ts';
 import { getMillisecondsUntilSystemMidnight } from './utils/dateUtils.ts';
 import { Navbar, NavTab, NotificationItem } from './components/Navbar.tsx';
+import { AppSidebarShell } from './components/AppSidebarShell.tsx';
 import { IdolHoverCard } from './components/IdolHoverCard.tsx';
 import { LoginPage } from './components/LoginPage.tsx';
 import { PayrollRecord } from './types/index.ts';
@@ -37,6 +38,7 @@ const LeaderboardView = lazy(() => import('./views/LeaderboardView.tsx').then(({
 const TaskManagementView = lazy(() => import('./views/TaskManagementView.tsx').then(({ TaskManagementView }) => ({ default: TaskManagementView })));
 const WorkScheduleView = lazy(() => import('./views/WorkScheduleView.tsx').then(({ WorkScheduleView }) => ({ default: WorkScheduleView })));
 const AnalyticsDashboardView = lazy(() => import('./views/AnalyticsDashboardView.tsx').then(({ AnalyticsDashboardView }) => ({ default: AnalyticsDashboardView })));
+const ApprovalCenterView = lazy(() => import('./views/ApprovalCenterView.tsx').then(({ ApprovalCenterView }) => ({ default: ApprovalCenterView })));
 const AdminPortalView = lazy(() => import('./views/AdminPortalView.tsx').then(({ AdminPortalView }) => ({ default: AdminPortalView })));
 const RoleDashboardView = lazy(() => import('./views/RoleDashboardView.tsx').then(({ RoleDashboardView }) => ({ default: RoleDashboardView })));
 const KpiSettingsView = lazy(() => import('./views/KpiSettingsView.tsx').then(({ KpiSettingsView }) => ({ default: KpiSettingsView })));
@@ -95,6 +97,24 @@ export default function App() {
     }
   });
 
+  const [uiShellMode, setUiShellMode] = useState<'sidebar' | 'classic'>(() => {
+    try {
+      const saved = localStorage.getItem('aura_ui_shell');
+      return saved === 'classic' ? 'classic' : 'sidebar';
+    } catch {
+      return 'sidebar';
+    }
+  });
+
+  const handleSetUiShellMode = (mode: 'sidebar' | 'classic') => {
+    setUiShellMode(mode);
+    try {
+      localStorage.setItem('aura_ui_shell', mode);
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     document.documentElement.style.colorScheme = theme;
@@ -131,7 +151,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>(() => {
     try {
       const saved = localStorage.getItem('aura_active_tab') as NavTab;
-      const validTabs: NavTab[] = ['roster', 'scoring', 'leaderboard', 'schedule', 'tasks', 'analytics', 'admin', 'my_dashboard', 'work_assignments', 'payroll', 'payroll_disputes', 'kpi', 'revenue', 'finance', 'service_usage'];
+      const validTabs: NavTab[] = ['roster', 'scoring', 'leaderboard', 'schedule', 'tasks', 'analytics', 'admin', 'approvals', 'my_dashboard', 'work_assignments', 'payroll', 'payroll_disputes', 'kpi', 'revenue', 'finance', 'service_usage'];
       if (saved && validTabs.includes(saved)) {
         return saved;
       }
@@ -303,8 +323,9 @@ export default function App() {
       const get = <T,>(key: string, loader: () => Promise<T>) =>
         shouldLoad(key) ? loader() : Promise.resolve(null as T | null);
       const needsAdminData = activeTab === 'admin';
+      const needsApprovalData = activeTab === 'approvals' || canAccessApprovalCenter(currentUser);
       const needsKpiData = activeTab === 'kpi' || needsAdminData;
-      const needsLeaveData = activeTab === 'my_dashboard' || needsAdminData || !!currentUser?.idolId;
+      const needsLeaveData = activeTab === 'my_dashboard' || needsApprovalData || !!currentUser?.idolId;
       const needsWorkAssignmentData = activeTab === 'my_dashboard' || activeTab === 'work_assignments' || !!currentUser?.allowedActions?.includes('manage_work_assignments') || !!currentUser?.isSuperAdmin;
       const needsUserData = ((activeTab === 'payroll' || needsAdminData || activeTab === 'my_dashboard') && !!currentUser?.isSuperAdmin)
         || !!currentUser?.allowedActions?.includes('manage_work_assignments')
@@ -342,7 +363,7 @@ export default function App() {
         get('columnHeaders', api.getColumnHeaders),
         get('personnelColumns', api.getPersonnelColumns),
         get('settings', api.getSettings),
-        needsAdminData ? get('approvals', api.getApprovals) : Promise.resolve(null),
+        needsApprovalData ? get('approvals', api.getApprovals) : Promise.resolve(null),
         get('schedules', api.getSchedules),
         needsLeaveData ? get('leaveRequests', api.getLeaveRequests) : Promise.resolve(null),
         needsPayrollDashboardData ? get('payrollPeriods', api.getPayrolls) : Promise.resolve(null),
@@ -396,7 +417,11 @@ export default function App() {
       const allowed = currentUser.allowedTabs;
       const currentTab = activeTabRef.current;
       if (currentTab === 'admin') {
-        if (!currentUser.isSuperAdmin && !allowed.includes('admin')) {
+        if (!canAccessAdminPortal(currentUser)) {
+          setActiveTab(allowed[0] as NavTab);
+        }
+      } else if (currentTab === 'approvals') {
+        if (!canAccessApprovalCenter(currentUser)) {
           setActiveTab(allowed[0] as NavTab);
         }
       } else if (
@@ -1038,6 +1063,8 @@ export default function App() {
     isSuperAdminUser ||
     ((activeTab === 'scoring' || activeTab === 'leaderboard')
       ? false
+      : activeTab === 'approvals'
+      ? canAccessApprovalCenter(currentUser)
       : activeTab === 'admin'
       ? canAccessAdminPortal(currentUser)
       : activeTab === 'payroll' || activeTab === 'payroll_disputes'
@@ -1132,40 +1159,36 @@ export default function App() {
     return <LoginPage onLoginSuccess={handleLoginSuccess} onLoginApi={api.login} />;
   }
 
-  return (
-    <div className="min-h-screen flex flex-col bg-slate-50/50 text-slate-900 selection:bg-rose-100 selection:text-rose-900">
-      {/* Top Navbar with Ubiquitous Universal Search */}
-      <Navbar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onOpenAddModal={handleOpenAddModal}
-        totalIdols={permittedIdols.length}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onOpenProfileModal={handleOpenProfileModal}
-        onOpenPayslip={currentUser.idolId ? handleOpenMyPayslip : undefined}
-        onOpenChangePasswordModal={() => setIsChangePasswordModalOpen(true)}
-        idols={permittedIdols}
-        tasks={permittedTasks}
-        departments={departments}
-        brandName={settings.brandName}
-        brandTagline={settings.brandTagline}
-        pendingApprovalsCount={
-          approvals.filter((a) => a.status === 'pending').length +
-          leaveRequests.filter((l) => l.status === 'pending').length
-        }
-        payrollDisputesCount={payrollDisputeCount}
-        notifications={personalNotifications}
-        onSelectNotification={handleSelectNotification}
-        onSelectTaskFromSearch={(task) => {
-          setTaskDetailSelectedIdolId(task.idolId);
-          setActiveTab('tasks');
-        }}
-        theme={theme}
-        onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
-      />
+  const shellProps = {
+    activeTab,
+    onTabChange: setActiveTab,
+    totalIdols: permittedIdols.length,
+    currentUser,
+    onLogout: handleLogout,
+    onOpenProfileModal: handleOpenProfileModal,
+    onOpenPayslip: currentUser.idolId ? handleOpenMyPayslip : undefined,
+    onOpenChangePasswordModal: () => setIsChangePasswordModalOpen(true),
+    idols: permittedIdols,
+    tasks: permittedTasks,
+    departments,
+    brandName: settings.brandName,
+    brandTagline: settings.brandTagline,
+    brandLogoUrl: settings.brandLogoUrl,
+    pendingApprovalsCount:
+      approvals.filter((a) => a.status === 'pending').length +
+      leaveRequests.filter((l) => l.status === 'pending').length,
+    payrollDisputesCount: payrollDisputeCount,
+    notifications: personalNotifications,
+    onSelectNotification: handleSelectNotification,
+    onSelectTaskFromSearch: (task: IdolTask) => {
+      setTaskDetailSelectedIdolId(task.idolId);
+      setActiveTab('tasks');
+    },
+    theme,
+    onToggleTheme: () => setTheme((current) => (current === 'dark' ? 'light' : 'dark')),
+  };
 
-      {/* Main View Area */}
+  const mainViewArea = (
       <main className="flex-1 max-w-[1700px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {loading ? (
           <div className="py-24 flex flex-col items-center justify-center space-y-3">
@@ -1305,12 +1328,16 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'admin' && (
-              <AdminPortalView
+            {activeTab === 'approvals' && (
+              <ApprovalCenterView
                 currentUser={currentUser}
-                users={users}
                 approvals={approvals}
                 leaveRequests={leaveRequests}
+                departments={departments}
+                idols={idols}
+                onApproveRequest={handleApproveRequest}
+                onRejectRequest={handleRejectRequest}
+                onDeleteApproval={handleDeleteApproval}
                 onApproveLeaveRequest={async (id, note) => {
                   await handleUpdateLeaveRequest(id, {
                     status: 'approved',
@@ -1328,6 +1355,13 @@ export default function App() {
                   });
                 }}
                 onDeleteLeaveRequest={handleDeleteLeaveRequest}
+              />
+            )}
+
+            {activeTab === 'admin' && (
+              <AdminPortalView
+                currentUser={currentUser}
+                users={users}
                 departments={departments}
                 personnelTypes={personnelTypes}
                 statuses={statuses}
@@ -1336,9 +1370,6 @@ export default function App() {
                 scores={scores}
                 settings={settings}
                 columnHeaders={columnHeaders}
-                onApproveRequest={handleApproveRequest}
-                onRejectRequest={handleRejectRequest}
-                onDeleteApproval={handleDeleteApproval}
                 onSaveUser={handleSaveUser}
                 onDeleteUser={handleDeleteUser}
                 onAddDepartment={handleAddDepartment}
@@ -1477,6 +1508,28 @@ export default function App() {
           </Suspense>
         )}
       </main>
+  );
+
+  return (
+    <>
+      {uiShellMode === 'sidebar' ? (
+        <AppSidebarShell
+          {...shellProps}
+          onSwitchToClassicNavbar={() => handleSetUiShellMode('classic')}
+        >
+          {mainViewArea}
+        </AppSidebarShell>
+      ) : (
+        <div className="min-h-screen flex flex-col bg-slate-50/50 text-slate-900 selection:bg-rose-100 selection:text-rose-900">
+          {/* Classic Top Navbar */}
+          <Navbar
+            {...shellProps}
+            onOpenAddModal={handleOpenAddModal}
+            onSwitchToSidebarShell={() => handleSetUiShellMode('sidebar')}
+          />
+          {mainViewArea}
+        </div>
+      )}
 
       {/* Floating Hover Popover Card for Idols */}
       <IdolHoverCard
@@ -1806,6 +1859,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

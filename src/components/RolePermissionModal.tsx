@@ -21,7 +21,8 @@ const TAB_OPTIONS: { id: AppTabPermission; label: string; desc: string }[] = [
   { id: 'analytics', label: 'Thống Kê & Báo Cáo', desc: 'Xem dashboard biểu đồ bar & pie chart' },
   { id: 'my_dashboard', label: 'Bàn Làm Việc Idol', desc: 'Không gian cá nhân của Idol: giờ live, KPI, lương, xin nghỉ phép' },
   { id: 'work_assignments', label: 'Giao việc & Công tác', desc: 'Theo dõi timeline, trạng thái và chi tiết công việc được giao' },
-  { id: 'admin', label: 'Trung Tâm Quản Trị', desc: 'Hàng đợi phê duyệt, phân quyền tài khoản & hệ thống' }
+  { id: 'approvals', label: 'Phê Duyệt Nhân Sự & Nghỉ Phép', desc: 'Duyệt đề xuất nhân sự và đơn xin nghỉ phép' },
+  { id: 'admin', label: 'Quản Trị Hệ Thống', desc: 'Phân quyền tài khoản, danh mục, tiêu chí & cấu hình hệ thống' }
 ];
 
 const ACTION_OPTIONS: { id: AppActionPermission; label: string; desc: string }[] = [
@@ -99,7 +100,7 @@ export const RolePermissionModal: React.FC<RolePermissionModalProps> = ({
         accountType: 'system_admin',
         isSuperAdmin: true,
         role: isCreating ? 'super_admin' : prev.role,
-        allowedTabs: ['roster', 'scoring', 'leaderboard', 'schedule', 'tasks', 'analytics', 'admin', 'my_dashboard', 'payroll', 'payroll_disputes', 'kpi', 'revenue', 'finance'],
+        allowedTabs: ['roster', 'scoring', 'leaderboard', 'schedule', 'tasks', 'analytics', 'approvals', 'admin', 'my_dashboard', 'payroll', 'payroll_disputes', 'kpi', 'revenue', 'finance'],
         allowedDepartments: ['*'],
         allowedActions: [
           'manage_idols',

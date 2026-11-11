@@ -1,5 +1,47 @@
 # Trạng Thái Dự Án (Project State)
 
+### Tách Phê Duyệt Nhân Sự & Nghỉ Phép khỏi Quản Trị Hệ Thống — 2026-11-11
+
+- **Phân hệ Phê Duyệt độc lập (`ApprovalCenterView.tsx` / tab `'approvals'`)**: tách `Duyệt Nghỉ Phép` và `Duyệt Yêu Cầu` khỏi `AdminPortalView.tsx`, đưa vào nhóm menu `Hồ Sơ` (`Phê Duyệt Nhân Sự`) trên cả Sidebar mới và Navbar cổ điển (`navigationConfig.ts`), giữ nguyên toàn bộ state/handlers trong `App.tsx` (không thay đổi DB schema hay backend API).
+- **Quản Trị Hệ Thống thuần túy (`AdminPortalView.tsx` / tab `'admin'`)**: chỉ còn 8 sub-tab kỹ thuật/cấu hình chia làm 3 nhóm (`1. Tài khoản & Bảo mật`, `2. Danh mục & Tổ chức`, `3. Cấu hình & Đánh giá`) và 2 chỉ số nhanh (`Tài Khoản`, `Đơn Vị`).
+- **Phân tách quyền truy cập (`adminAccess.ts`, `permissionCatalog.ts`, `types/roles.ts`)**: mở rộng `AppTabPermission` và `TAB_PERMISSION_OPTIONS` lên **16** mục với `'approvals'`; `canAccessApprovalCenter` tách biệt khỏi `canAccessAdminPortal` nên `hr_admin` thao tác phê duyệt bình thường trong `Hồ Sơ` mà không thấy nhóm `Hệ Thống` hoặc nút `Quản Trị`.
+- **Xác minh**: `tsc --noEmit` (`0` lỗi), `pnpm.cmd test` đạt đầy đủ, `vite build` đạt; Playwright kiểm chứng trên `http://localhost:3001/` cho cả `admin` (8 tab / 3 nhóm trong Quản Trị, 2 tab trong Phê Duyệt Nhân Sự, 16 tab permission, Dark mode & Classic Navbar) và `hr_admin` (ẩn hoàn toàn nhóm `Hệ Thống` và nút `Quản Trị`, truy cập `ApprovalCenterView` sạch với `0` lỗi JS console / `0` API 4xx-5xx).
+
+### Chuẩn hóa Quản Trị Hệ Thống, đồng bộ 15/15 quyền RBAC và bảo vệ Trạng Thái (Nhóm 4) — 2026-11-11
+
+- **Đồng bộ danh mục quyền RBAC (`src/utils/permissionCatalog.ts`)**: hợp nhất 15 `AppTabPermission` và 15 `AppActionPermission` dùng chung cho `RoleBasedPermissionManager` (thêm `#rbac-perm-search` và phân 4 nhóm action) và modal tài khoản `AdminPortalView`, loại bỏ lệch số đếm `15/12 quyền`.
+- **Toàn vẹn danh mục Trạng Thái**: `pgStore.deleteStatus` từ chối xóa trạng thái còn nhân sự sử dụng; `AdminPortalView` khóa nút xóa khi `count > 0` và xác nhận trước khi xóa trạng thái rỗng.
+- **Tái cấu trúc Admin & Nâng cấp Audit Log**: nhóm 10 sub-tab thành 4 cụm có nhãn rõ ràng (`Phê duyệt & Quy trình`, `Tài khoản & Bảo mật`, `Danh mục & Tổ chức`, `Cấu hình & Đánh giá`), gắn phạm vi ảnh hưởng trên 3 khối `Thiết Lập Hệ Thống`, bổ sung lọc `category`/`statusGroup`/`fromDate`–`toDate` và `Xuất CSV` cho `AdminAuditLogPanel`.
+- **Xác minh sau chỉnh sửa**: `tsc --noEmit` (`0` lỗi), `pnpm.cmd test` (**134/134** passed), `vite build` đạt; Playwright kiểm chứng trên `http://localhost:3001/` (`admin` / `123`): `13/15 Tab · 15/15 Quyền`, khóa nút xóa trạng thái đang dùng (`20` và `1` nhân sự), 4 nhóm tab + 3 khối settings, lọc `data`/`auth`, `2xx`/`4xx_5xx`, khoảng ngày và `0` lỗi JS/HTTP `5xx`.
+
+### Kết nối Dual-Shell UI mới, hoàn thiện AuditLog Viewer & sửa tương phản Dark Mode (Nhóm 3) — 2026-11-11
+
+- **Dual-Shell Navigation (so sánh trực tiếp `sidebar` mới ↔ `classic` cũ trên dữ liệu thật)**:
+  - Triển khai [`AppSidebarShell.tsx`](../src/components/AppSidebarShell.tsx) làm shell mặc định và dùng chung quy tắc phân quyền menu tại [`navigationConfig.ts`](../src/utils/navigationConfig.ts) với [`Navbar.tsx`](../src/components/Navbar.tsx).
+  - [`src/App.tsx`](../src/App.tsx) hỗ trợ chuyển đổi 1 chạm (`Giao diện Cũ` ↔ `Giao diện Mới`), lưu trong `localStorage` (`aura_ui_shell`), giữ nguyên tab và phiên đăng nhập. Route `/ui-preview` dùng dữ liệu mẫu vẫn được giữ riêng trong `src/preview/` cho đến khi người dùng quyết định dọn bỏ.
+- **AuditLog API & Viewer cho Super Admin**:
+  - Bổ sung `pgStore.getAuditLogs` (`server/db/pgStore.ts`), route `GET /api/admin/audit-logs` với `requireSuperAdmin` (`server.ts`, `server/auth/authorization.ts`), `api.getAuditLogs` (`src/services/api.ts`), và sub-tab `Nhật Ký Hệ Thống` (`src/components/AdminAuditLogPanel.tsx`, `src/views/AdminPortalView.tsx`, `src/utils/adminAccess.ts`).
+- **Tương phản Dark Mode & Accessibility**:
+  - Sửa contrast `bg-rose-200`/`text-rose-900/80` trong `src/index.css`; bổ sung `id`/`name`/`<label>`/`aria-label` chuẩn cho tìm kiếm header và bộ lọc Audit Log.
+- **Xác minh sau chỉnh sửa cuối**:
+  - `tsc --noEmit` đạt (`0` lỗi), `pnpm.cmd test` đạt (`132/132`), `vite build` đạt.
+  - Playwright trên `http://localhost:3001/` (PostgreSQL thật) xác nhận: shell `sidebar` mặc định, Universal Search & collapse sidebar, mobile drawer `390x844` (không tràn ngang), `GET /api/admin/audit-logs` tải 332 bản ghi thật + lọc + modal metadata, Dark Mode Card 4 Finance dễ đọc, chuyển đổi A/B `sidebar` ↔ `classic` mượt mà, đồng nhất 11 tab RBAC trên `hr_admin` + API trả `401`/`403` cho non-Super-Admin, `0` lỗi JS console và `0` lỗi HTTP 5xx.
+
+### Gỡ `.vscode/` và `.agents/` khỏi Git & cập nhật `.gitignore` — 2026-11-11
+
+- Đã xóa `.vscode/` và `.agents/` khỏi toàn bộ lịch sử Git bằng `git-filter-repo` và bổ sung `.agents/`, `.vscode/` vào `.gitignore` để chỉ giữ cấu hình IDE/AI agent ở môi trường local, đồng thời dọn bộ lọc đường dẫn tương ứng trong `.gitlab-ci.yml`.
+
+### Hoàn thiện bảo mật RBAC/IDOR, chuẩn hóa đối soát lương/P&L và tối ưu upload (Nhóm 1 & 2) — 2026-11-11
+
+- **Bảo mật & phân quyền (Nhóm 1)**: Đã bổ sung kiểm tra quyền trên các endpoint `GET` nhạy cảm (`/api/approvals`, `/api/payrolls*`, `/api/finance/*`, `/api/revenue/*`, `/api/service-usage*`) trong `server/auth/authorization.ts` và chặn IDOR theo người gọi tại `GET /api/payrolls/my-payslips/:userId`, `GET /api/idols/:id/salary-history`, `PUT /api/auth/profile` trong `server.ts`.
+- **Logic nghiệp vụ, kế toán & upload (Nhóm 2)**: Đã triển khai thực thi `'update_idol'` trong `approveApproval`, áp dụng lọc `userId` trong `getPayrollRecords`, hợp nhất công thức tính lương `recalculatePayrollRecordFinancials` cho `adjustPayrollRecord` và `syncRevenueToPayroll` (bọc transaction), đồng bộ kỳ mặc định P&L và chi phí `LABOR_INSURANCE` vào `totalOpEx`, đồng thời thay thế quét đồng bộ thư mục upload bằng chỉ mục SHA-256 bất đồng bộ kèm kiểm tra magic bytes ảnh.
+- **Kiểm thử & Bước tiếp theo**: Đã bổ sung unit test trong `test/authorization.test.ts` và `test/payrollDeductions.test.ts`, kiểm thử trực tiếp trên trình duyệt cho các vai trò `admin`, `hr_admin` và Idol `anhtm`. Đang lập kế hoạch cho Nhóm 3 (Nâng cấp giao diện & trải nghiệm, sửa tương phản dark-mode/nhãn/accessibility và bổ sung màn hình xem `AuditLog`), chờ người dùng phê duyệt trước khi chỉnh sửa UI.
+
+### Bổ sung tài liệu đặc tả kiến trúc & chức năng — 2026-11-11
+
+- Đã tạo mới tài liệu [`docs/architecture/system-functional-specification.md`](./architecture/system-functional-specification.md) tổng hợp phân tích tĩnh toàn hệ thống (kiến trúc Modular Monolith, mô hình 25 bảng Prisma/PostgreSQL, 74 index, 9 nhóm module chức năng end-to-end, bảo mật JWT/RBAC, đồng hồ tham chiếu mô phỏng, cấu hình môi trường/CI và các phát hiện rủi ro/nợ kỹ thuật cần lưu ý).
+- Thay đổi chỉ thuộc phạm vi tài liệu (`docs/`), giữ nguyên [`docs/architecture-current.md`](./architecture-current.md) và không chỉnh sửa mã nguồn, schema DB hay cấu hình runtime.
+
 ### Lọc CI/CD cho thay đổi tài liệu & phi-runtime — 2026-11-11
 
 - Đã tinh chỉnh `.gitlab-ci.yml`: chuyển bộ lọc `changes:regexp` lên `workflow:rules` cho `main` (tránh lỗi pipeline rỗng khi merge docs-only lên `main`), hỗ trợ `$CI_PIPELINE_SOURCE == "web"` (**Run pipeline** thủ công), bật `interruptible: true` cho `docs_only`/`verify` và khóa `interruptible: false` cho `.vm_deploy`.

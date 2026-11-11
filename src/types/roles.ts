@@ -107,7 +107,7 @@ const ROLE_PRESET_DEFINITIONS: RolePreset[] = [
     role: 'super_admin',
     isSuperAdmin: true,
     description: 'Toàn quyền quản trị hệ thống, độc lập với phòng ban và chức danh nghiệp vụ.',
-    defaultTabs: ['roster', 'scoring', 'leaderboard', 'schedule', 'tasks', 'analytics', 'admin', 'my_dashboard', 'payroll', 'payroll_disputes', 'kpi', 'revenue', 'finance'],
+    defaultTabs: ['roster', 'scoring', 'leaderboard', 'schedule', 'tasks', 'analytics', 'approvals', 'admin', 'my_dashboard', 'payroll', 'payroll_disputes', 'kpi', 'revenue', 'finance'],
     defaultActions: ['manage_idols', 'manage_scores', 'manage_criteria', 'manage_schedule', 'manage_tasks', 'manage_work_assignments', 'manage_departments', 'manage_settings', 'manage_approvals', 'manage_payroll', 'adjust_payroll', 'approve_payroll', 'hot_bonus', 'manage_kpi', 'manage_revenue'],
     defaultDepartments: ['*']
   },
@@ -121,7 +121,7 @@ const ROLE_PRESET_DEFINITIONS: RolePreset[] = [
     role: 'director',
     isSuperAdmin: false,
     description: 'Điều hành chiến lược, KPI và hoạt động doanh nghiệp theo phạm vi được cấp.',
-    defaultTabs: ['roster', 'scoring', 'leaderboard', 'schedule', 'tasks', 'analytics', 'admin', 'payroll', 'kpi'],
+    defaultTabs: ['roster', 'scoring', 'leaderboard', 'schedule', 'tasks', 'analytics', 'approvals', 'admin', 'payroll', 'kpi'],
     defaultActions: [
       'manage_idols',
       'manage_scores',
@@ -149,7 +149,7 @@ const ROLE_PRESET_DEFINITIONS: RolePreset[] = [
     category: 'talent_management',
     role: 'manager',
     description: 'Quản lý toàn bộ chỉ số KPI, lịch trình, tuyển chọn và phê duyệt yêu cầu của 3 nhóm Idol chuyên biệt.',
-    defaultTabs: ['roster', 'schedule', 'tasks', 'analytics', 'kpi'],
+    defaultTabs: ['roster', 'schedule', 'tasks', 'analytics', 'approvals', 'kpi'],
     defaultActions: [
       'manage_idols',
       'manage_schedule',
@@ -331,7 +331,7 @@ const ROLE_PRESET_DEFINITIONS: RolePreset[] = [
     category: 'shared_support',
     role: 'custom',
     description: 'Quản lý hồ sơ nhân sự, hợp đồng, chấm công theo lịch live và tính thưởng KPI.',
-    defaultTabs: ['roster', 'schedule', 'analytics', 'payroll', 'kpi'],
+    defaultTabs: ['roster', 'schedule', 'analytics', 'approvals', 'payroll', 'kpi'],
     defaultActions: ['manage_idols', 'manage_approvals', 'manage_payroll', 'adjust_payroll'],
     defaultDepartments: ['*']
   }

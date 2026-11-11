@@ -1,25 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Sparkles,
-  Users,
-  Award,
-  Trophy,
   CheckSquare,
-  BarChart3,
-  RotateCcw,
   Shield,
   LogOut,
-  Tag,
   Building2,
   Search,
   X,
-  Clock,
   ArrowRight,
-  CalendarClock,
-  Banknote,
-  Target,
-  Coins,
-  TrendingUp,
   ChevronDown,
   Check,
   User,
@@ -29,30 +17,18 @@ import {
   Moon,
   Sun,
   Bell,
-  BriefcaseBusiness
+  PanelLeftOpen
 } from 'lucide-react';
-import { UserAccount, AppTabPermission, Idol, IdolTask, DEFAULT_BLANK_AVATAR } from '../types/index.ts';
-import { canAccessAdminPortal } from '../utils/adminAccess.ts';
+import { UserAccount, Idol, IdolTask, DEFAULT_BLANK_AVATAR } from '../types/index.ts';
+import {
+  buildNavGroups,
+  canAccessNavTab,
+  canViewSystemSettings as checkCanViewSystemSettings,
+  getHomeNavTab,
+  type NavGroupConfig,
+} from '../utils/navigationConfig.ts';
 
-export type NavTab = 'roster' | 'scoring' | 'leaderboard' | 'schedule' | 'tasks' | 'analytics' | 'admin' | 'my_dashboard' | 'work_assignments' | 'payroll' | 'payroll_disputes' | 'kpi' | 'revenue' | 'finance' | 'service_usage';
-
-interface NavSubItem {
-  tab: NavTab;
-  label: string;
-  subLabel: string;
-  icon: React.ComponentType<{ className?: string }>;
-  iconColor: string;
-  iconBg: string;
-  badge?: string | number;
-}
-
-interface NavGroup {
-  id: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  iconColor: string;
-  items: NavSubItem[];
-}
+export type NavTab = 'roster' | 'scoring' | 'leaderboard' | 'schedule' | 'tasks' | 'analytics' | 'admin' | 'approvals' | 'my_dashboard' | 'work_assignments' | 'payroll' | 'payroll_disputes' | 'kpi' | 'revenue' | 'finance' | 'service_usage';
 
 export interface NotificationItem {
   id: string;
@@ -93,6 +69,7 @@ interface NavbarProps {
   onSelectNotification?: (notification: NotificationItem) => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
+  onSwitchToSidebarShell?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -122,20 +99,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   notifications = [],
   onSelectNotification,
   theme,
-  onToggleTheme
+  onToggleTheme,
+  onSwitchToSidebarShell
 }) => {
-  const allowedTabs: AppTabPermission[] = currentUser?.allowedTabs || [
-    'roster',
-    'scoring',
-    'leaderboard',
-    'schedule',
-    'tasks',
-    'analytics'
-  ];
-
-  // Local/system accounts without a personnel profile do not have personal
-  // profile or payslip data to display. System admins linked to personnel
-  // still retain these two personal features.
   const canViewPersonalData = Boolean(currentUser?.idolId);
   const notificationStorageKey = `aura_read_notifications_${currentUser?.id || 'anonymous'}`;
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>(() => {
@@ -163,107 +129,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     });
     onSelectNotification?.(notification);
   };
-  // Approval access is broader than system configuration access. Only the
-  // root System Admin should see the system-settings shortcut here.
-  const canViewSystemSettings = Boolean(
-    currentUser?.accountType === 'system_admin' ||
-    currentUser?.isSuperAdmin ||
-    currentUser?.roleCodes?.includes('system_admin')
-  );
-
-  const canAccess = (tab: AppTabPermission) => {
-    // Bảng điểm và Xếp hạng hiện tại chỉ mỗi Super Admin được thao tác và thấy
-    if (tab === 'scoring' || tab === 'leaderboard') {
-      return !!(currentUser?.isSuperAdmin || currentUser?.role === 'super_admin');
-    }
-    // Tab Bảng Lương: Dành cho Giám Đốc/Super Admin, Kế Toán, hoặc HR
-    if (tab === 'payroll') {
-      return !!(
-        currentUser?.isSuperAdmin ||
-        currentUser?.role === 'super_admin' ||
-        currentUser?.role === 'director' ||
-        currentUser?.allowedTabs?.includes('payroll') ||
-        currentUser?.department?.includes('Kế Toán') ||
-        currentUser?.department?.includes('HR') ||
-        currentUser?.roleTitle?.includes('Kế toán') ||
-        currentUser?.roleTitle?.includes('Nhân Sự')
-      );
-    }
-    if (tab === 'payroll_disputes') {
-      return !!(
-        currentUser?.isSuperAdmin ||
-        currentUser?.role === 'super_admin' ||
-        currentUser?.role === 'director' ||
-        currentUser?.allowedTabs?.includes('payroll_disputes') ||
-        currentUser?.allowedTabs?.includes('payroll') ||
-        currentUser?.allowedActions?.includes('manage_payroll') ||
-        currentUser?.allowedActions?.includes('adjust_payroll') ||
-        currentUser?.allowedActions?.includes('approve_payroll') ||
-        currentUser?.department?.includes('Kế Toán') ||
-        currentUser?.department?.includes('HR') ||
-        currentUser?.roleTitle?.includes('Kế toán') ||
-        currentUser?.roleTitle?.includes('Nhân sự')
-      );
-    }
-    // Tab Tài Chính & PnL: Dành cho Giám Đốc/Super Admin, Kế Toán, hoặc user có quyền finance
-    if (tab === 'finance') {
-      return !!(
-        currentUser?.isSuperAdmin ||
-        currentUser?.role === 'super_admin' ||
-        currentUser?.role === 'director' ||
-        currentUser?.allowedTabs?.includes('finance') ||
-        currentUser?.department?.includes('Kế Toán') ||
-        currentUser?.roleTitle?.includes('Kế toán') ||
-        currentUser?.roleTitle?.includes('Giám Đốc')
-      );
-    }
-    if (tab === 'work_assignments') {
-      return !!(
-        currentUser?.isSuperAdmin ||
-        currentUser?.role === 'super_admin' ||
-        currentUser?.role === 'director' ||
-        currentUser?.role === 'manager' ||
-        currentUser?.allowedTabs?.includes('work_assignments') ||
-        currentUser?.allowedTabs?.includes('my_dashboard') ||
-        currentUser?.allowedActions?.includes('manage_work_assignments')
-      );
-    }
-    if (tab === 'service_usage') {
-      return !!(
-        currentUser?.isSuperAdmin ||
-        currentUser?.role === 'super_admin' ||
-        currentUser?.role === 'director' ||
-        currentUser?.allowedTabs?.includes('service_usage') ||
-        currentUser?.allowedActions?.includes('manage_revenue') ||
-        currentUser?.department?.includes('Kế Toán') ||
-        currentUser?.department?.includes('HR') ||
-        currentUser?.roleTitle?.includes('Kế toán') ||
-        currentUser?.roleTitle?.includes('Giám đốc')
-      );
-    }
-    // Tab KPI: Dành cho Giám Đốc/Super Admin, Manager, HR/Kế Toán, hoặc user có quyền kpi
-    if (tab === 'kpi') {
-      return !!(
-        currentUser?.isSuperAdmin ||
-        currentUser?.role === 'super_admin' ||
-        currentUser?.role === 'director' ||
-        currentUser?.role === 'manager' ||
-        currentUser?.department?.includes('Kế Toán') ||
-        currentUser?.department?.includes('HR') ||
-        currentUser?.roleTitle?.includes('Kế toán') ||
-        currentUser?.roleTitle?.includes('Nhân Sự') ||
-        currentUser?.allowedTabs?.includes('kpi') ||
-        allowedTabs.includes('kpi')
-      );
-    }
-    if (currentUser?.isSuperAdmin) {
-      return true;
-    }
-    // Người được cấp quyền phê duyệt cần có điểm truy cập Duyệt Nghỉ Phép
-    // trong Admin Portal, dù không phải system admin.
-    if (tab === 'admin') return canAccessAdminPortal(currentUser);
-    return allowedTabs.includes(tab);
-  };
+  const canViewSystemSettings = checkCanViewSystemSettings(currentUser);
+  const canAccess = (tab: NavTab) => canAccessNavTab(currentUser, tab);
 
   // Universal Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -331,19 +198,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, [departments, trimmedSearch]);
 
   // Calculate user-friendly primary home tab based on their permissions
-  const homeTab: NavTab = useMemo(() => {
-    if (currentUser?.allowedTabs?.includes('my_dashboard') && !currentUser?.isSuperAdmin) {
-      return 'my_dashboard';
-    }
-    if (canAccess('roster')) {
-      return 'roster';
-    }
-    if (currentUser?.allowedTabs && currentUser.allowedTabs.length > 0) {
-      const first = currentUser.allowedTabs.find((t) => canAccess(t));
-      return (first || 'my_dashboard') as NavTab;
-    }
-    return 'my_dashboard';
-  }, [currentUser, canAccess]);
+  const homeTab: NavTab = useMemo(() => getHomeNavTab(currentUser), [currentUser]);
 
   const handleLogoClick = () => {
     onTabChange(homeTab);
@@ -386,155 +241,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Navigation Groups Definition (4 Business Hubs)
-  const groups: NavGroup[] = useMemo(() => {
-    const talentItems: NavSubItem[] = [
-      {
-        tab: 'roster',
-        label: 'Danh sách hồ sơ',
-        subLabel: 'Idol, nhân viên, cộng tác viên & đối tác dịch vụ',
-        icon: Users,
-        iconColor: 'text-rose-600',
-        iconBg: 'bg-rose-50',
-        badge: totalIdols
-      },
-      {
-        tab: 'my_dashboard',
-        label: 'Dashboard cá nhân',
-        subLabel: 'Không gian làm việc & thành tích cá nhân',
-        icon: Sparkles,
-        iconColor: 'text-amber-500',
-        iconBg: 'bg-amber-50'
-      },
-      {
-        tab: 'work_assignments',
-        label: 'Giao việc & Công tác',
-        subLabel: 'Timeline, trạng thái và chi tiết công việc được giao',
-        icon: BriefcaseBusiness,
-        iconColor: 'text-sky-600',
-        iconBg: 'bg-sky-50'
-      },
-      {
-        tab: 'schedule',
-        label: 'Lịch Làm Việc & Ca Live',
-        subLabel: 'Lịch phát sóng, sự kiện & booking',
-        icon: CalendarClock,
-        iconColor: 'text-indigo-600',
-        iconBg: 'bg-indigo-50'
-      }
-    ];
-
-    const operationItems: NavSubItem[] = [
-      {
-        tab: 'tasks',
-        label: 'Quản Lý Nhiệm Vụ',
-        subLabel: 'Giao việc, nhắc hẹn & duyệt kết quả',
-        icon: CheckSquare,
-        iconColor: 'text-emerald-600',
-        iconBg: 'bg-emerald-50'
-      },
-      {
-        tab: 'scoring',
-        label: 'Bảng Điểm Đánh Giá',
-        subLabel: 'Chấm điểm định kỳ theo tiêu chí',
-        icon: Award,
-        iconColor: 'text-sky-600',
-        iconBg: 'bg-sky-50'
-      },
-      {
-        tab: 'leaderboard',
-        label: 'Bảng Xếp Hạng Idol',
-        subLabel: 'Vinh danh bảng vàng & phân hạng Tier',
-        icon: Trophy,
-        iconColor: 'text-amber-500',
-        iconBg: 'bg-amber-50'
-      },
-      {
-        tab: 'analytics',
-        label: 'Báo Cáo & Thống Kê',
-        subLabel: 'Hiệu suất tăng trưởng & xu hướng',
-        icon: BarChart3,
-        iconColor: 'text-blue-600',
-        iconBg: 'bg-blue-50'
-      }
-    ];
-
-    const financeItems: NavSubItem[] = [
-      {
-        tab: 'finance',
-        label: 'Tài Chính & Lợi Nhuận',
-        subLabel: 'Báo cáo P&L, thu chi & chi phí công ty',
-        icon: TrendingUp,
-        iconColor: 'text-amber-600',
-        iconBg: 'bg-amber-50'
-      },
-      {
-        tab: 'revenue',
-        label: 'Quản Lý Doanh Thu',
-        subLabel: 'Booking nhãn hàng & thanh toán theo đợt',
-        icon: Coins,
-        iconColor: 'text-sky-600',
-        iconBg: 'bg-sky-50'
-      },
-      {
-        tab: 'service_usage',
-        label: 'Lịch Sử Dịch Vụ Ngoài',
-        subLabel: 'Danh sách hồ sơ và các lần sử dụng dịch vụ',
-        icon: BriefcaseBusiness,
-        iconColor: 'text-amber-600',
-        iconBg: 'bg-amber-50'
-      },
-      {
-        tab: 'payroll',
-        label: 'Bảng Tính Lương & Thù Lao',
-        subLabel: 'Phiếu lương idol, tạm ứng & khấu trừ',
-        icon: Banknote,
-        iconColor: 'text-emerald-600',
-        iconBg: 'bg-emerald-50'
-      },
-      {
-        tab: 'payroll_disputes',
-        label: 'Phản ánh bảng lương',
-        subLabel: 'Danh sách, chi tiết và xử lý phản ánh',
-        icon: FileText,
-        iconColor: 'text-indigo-600',
-        iconBg: 'bg-indigo-50',
-        badge: payrollDisputesCount > 0 ? payrollDisputesCount : undefined
-      },
-      {
-        tab: 'kpi',
-        label: 'Thiết Đặt Định Mức & KPI',
-        subLabel: 'Chỉ tiêu doanh thu, giờ live & thưởng',
-        icon: Target,
-        iconColor: 'text-rose-600',
-        iconBg: 'bg-rose-50'
-      }
-    ];
-
-    return [
-      {
-        id: 'talent',
-        label: 'Hồ Sơ',
-        icon: Users,
-        iconColor: 'text-rose-600',
-        items: talentItems.filter(item => canAccess(item.tab))
-      },
-      {
-        id: 'operations',
-        label: 'Vận Hành',
-        icon: CheckSquare,
-        iconColor: 'text-sky-600',
-        items: operationItems.filter(item => canAccess(item.tab))
-      },
-      {
-        id: 'finance',
-        label: 'Tài Chính',
-        icon: Coins,
-        iconColor: 'text-amber-600',
-        items: financeItems.filter(item => canAccess(item.tab))
-      }
-    ];
-  }, [totalIdols, payrollDisputesCount, canAccess]);
+  // Navigation Groups Definition (shared single source of truth)
+  const groups: NavGroupConfig[] = useMemo(
+    () => buildNavGroups(currentUser, { totalIdols, payrollDisputesCount, pendingApprovalsCount }),
+    [currentUser, totalIdols, payrollDisputesCount, pendingApprovalsCount],
+  );
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-2xs">
@@ -681,21 +392,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }`}
               >
                 <Shield className="w-3.5 h-3.5" />
-                <span>{currentUser?.isSuperAdmin ? 'Quản Trị' : 'Phê Duyệt'}</span>
-                {pendingApprovalsCount > 0 && (
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'admin' ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'
-                      }`}
-                  >
-                    {pendingApprovalsCount}
-                  </span>
-                )}
+                <span>Quản Trị</span>
               </button>
             )}
           </nav>
 
           {/* User Profile, Search & Actions (Right group) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {onSwitchToSidebarShell && (
+              <button
+                type="button"
+                onClick={onSwitchToSidebarShell}
+                title="Chuyển sang Giao diện Sidebar Mới để đối chiếu"
+                aria-label="Chuyển sang giao diện mới"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-[11px] font-bold transition-colors cursor-pointer"
+              >
+                <PanelLeftOpen className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Giao diện Mới</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onToggleTheme}
@@ -745,8 +460,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Universal Search Bar */}
             <div ref={searchContainerRef} className="relative w-28 sm:w-36 lg:w-44 focus-within:w-56 transition-all duration-200 hidden sm:block">
               <div className="relative">
+                <label htmlFor="classic-universal-search" className="sr-only">Tìm kiếm toàn hệ thống</label>
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
+                  id="classic-universal-search"
+                  name="classicUniversalSearch"
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
@@ -756,6 +474,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setIsSearchOpen(true);
                   }}
                   placeholder="Tìm kiếm... (Ctrl+K)"
+                  aria-label="Tìm kiếm toàn hệ thống"
                   className="w-full pl-8 pr-6 py-1 text-xs bg-slate-50 border border-slate-200/90 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500/20 focus:border-rose-400 focus:bg-white transition-all placeholder:text-slate-400"
                 />
                 {searchQuery && (

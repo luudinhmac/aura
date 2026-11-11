@@ -190,6 +190,7 @@ html.dark [class~="hover:bg-white/10"]:hover {
    the light Tailwind tint utilities used by badges, cards, alerts and tabs. */
 html.dark [class~="bg-rose-50"], html.dark [class~="bg-rose-50/90"], html.dark [class~="bg-rose-50/80"], html.dark [class~="bg-rose-50/70"], html.dark [class~="bg-rose-50/60"], html.dark [class~="bg-rose-50/50"], html.dark [class~="bg-rose-50/40"], html.dark [class~="bg-rose-50/30"] { background-color: #2a1824; }
 html.dark [class~="bg-rose-100"], html.dark [class~="bg-rose-100/90"], html.dark [class~="bg-rose-100/80"], html.dark [class~="bg-rose-100/70"], html.dark [class~="bg-rose-100/60"], html.dark [class~="bg-rose-100/50"] { background-color: #3a1f2c; }
+html.dark [class~="bg-rose-200"], html.dark [class~="bg-rose-200/80"] { background-color: #52283c; }
 html.dark [class~="bg-amber-50"], html.dark [class~="bg-amber-50/90"], html.dark [class~="bg-amber-50/80"], html.dark [class~="bg-amber-50/70"], html.dark [class~="bg-amber-50/60"], html.dark [class~="bg-amber-50/50"], html.dark [class~="bg-amber-50/40"], html.dark [class~="bg-amber-50/30"] { background-color: #332718; }
 html.dark [class~="bg-amber-100"], html.dark [class~="bg-amber-100/90"], html.dark [class~="bg-amber-100/80"], html.dark [class~="bg-amber-100/70"], html.dark [class~="bg-amber-100/60"], html.dark [class~="bg-amber-100/50"] { background-color: #45351c; }
 html.dark [class~="bg-indigo-50"], html.dark [class~="bg-indigo-50/90"], html.dark [class~="bg-indigo-50/80"], html.dark [class~="bg-indigo-50/70"], html.dark [class~="bg-indigo-50/60"], html.dark [class~="bg-indigo-50/50"], html.dark [class~="bg-indigo-50/40"], html.dark [class~="bg-indigo-50/30"] { background-color: #1d2140; }
@@ -223,7 +224,7 @@ html.dark [class~="text-emerald-900"], html.dark [class~="text-emerald-950"] { c
 html.dark [class~="text-amber-900"], html.dark [class~="text-amber-950"] { color: #fef3c7; }
 html.dark [class~="text-indigo-900"], html.dark [class~="text-indigo-950"] { color: #e0e7ff; }
 html.dark [class~="text-purple-900"], html.dark [class~="text-purple-950"] { color: #f3e8ff; }
-html.dark [class~="text-rose-900"], html.dark [class~="text-rose-950"] { color: #ffe4e6; }
+html.dark [class~="text-rose-900"], html.dark [class~="text-rose-900/80"], html.dark [class~="text-rose-950"] { color: #ffe4e6; }
 html.dark [class~="text-slate-950"] { color: #f8fafc; }
 
 html.dark [class~="border-rose-100"], html.dark [class~="border-rose-200"], html.dark [class~="border-rose-300"] { border-color: #6b3a54; }

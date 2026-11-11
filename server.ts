@@ -8,7 +8,7 @@ import crypto from 'crypto';
 import { pgStore as dbStore } from './server/db/pgStore.ts';
 import { createAccessToken, createJwtConfig, clearRefreshCookie, readRefreshCookie, serializeRefreshCookie, verifyAccessToken } from './server/auth/jwt.ts';
 import { createAuthSession, findActiveAuthSession, revokeAuthSession, rotateAuthSession } from './server/auth/session.ts';
-import { findRoutePolicy, hasAction, isDirector, isSuperAdmin } from './server/auth/authorization.ts';
+import { findRoutePolicy, hasAction, hasAnyAction, isDirector, isSuperAdmin } from './server/auth/authorization.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -148,57 +148,86 @@ async function startServer() {
     }
   });
 
+  // In-memory index of existing upload SHA-256 hashes (loaded lazily once, avoiding O(N) sync disk scans per request)
+  let uploadHashIndexPromise: Promise<Map<string, string>> | null = null;
+  const getUploadHashIndex = (): Promise<Map<string, string>> => {
+    if (!uploadHashIndexPromise) {
+      uploadHashIndexPromise = (async () => {
+        const index = new Map<string, string>();
+        try {
+          const files = await fs.promises.readdir(uploadsDir);
+          for (const filename of files) {
+            const filePath = path.join(uploadsDir, filename);
+            try {
+              const stat = await fs.promises.stat(filePath);
+              if (!stat.isFile()) continue;
+              const content = await fs.promises.readFile(filePath);
+              const hash = crypto.createHash('sha256').update(content).digest('hex');
+              if (!index.has(hash)) index.set(hash, filename);
+            } catch {
+              // Skip unreadable files
+            }
+          }
+        } catch {
+          // Directory may not exist yet
+        }
+        return index;
+      })();
+    }
+    return uploadHashIndexPromise;
+  };
+
+  const hasValidImageSignature = (buf: Buffer): boolean => {
+    if (buf.length < 4) return false;
+    // JPEG (FF D8 FF), PNG (89 50 4E 47), GIF (47 49 46 38), WebP (RIFF....WEBP)
+    const isJpeg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+    const isGif = buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38;
+    const isWebp = buf.length >= 12
+      && buf.subarray(0, 4).toString('ascii') === 'RIFF'
+      && buf.subarray(8, 12).toString('ascii') === 'WEBP';
+    return isJpeg || isPng || isGif || isWebp;
+  };
+
   // Upload image endpoint với kiểm tra trùng lặp (SHA-256 Content Hash Deduplication)
-  app.post('/api/upload', upload.single('avatar'), (req, res) => {
+  app.post('/api/upload', upload.single('avatar'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'Không tìm thấy file tải lên' });
+    }
+    if (!hasValidImageSignature(req.file.buffer)) {
+      return res.status(400).json({ error: 'Nội dung file không phải định dạng ảnh hợp lệ (JPG, PNG, WEBP, GIF)' });
     }
 
     try {
       const fileBuffer = req.file.buffer;
       const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      const hashIndex = await getUploadHashIndex();
 
-      // 1. Quét các file hiện có trong uploads/idols để kiểm tra trùng lặp nội dung
-      let matchedFilename: string | null = null;
-      if (fs.existsSync(uploadsDir)) {
-        const files = fs.readdirSync(uploadsDir);
-        for (const f of files) {
-          const filePath = path.join(uploadsDir, f);
-          try {
-            if (fs.statSync(filePath).isFile()) {
-              const existingContent = fs.readFileSync(filePath);
-              const existingHash = crypto.createHash('sha256').update(existingContent).digest('hex');
-              if (existingHash === fileHash) {
-                matchedFilename = f;
-                break;
-              }
-            }
-          } catch {
-            // Bỏ qua file lỗi/không đọc được
-          }
-        }
-      }
-
-      // 2. Nếu phát hiện file trùng lặp 100% nội dung: KHÔNG LƯU FILE MỚI, tái sử dụng URL cũ
+      const matchedFilename = hashIndex.get(fileHash) || null;
       if (matchedFilename) {
-        const publicUrl = `/uploads/idols/${matchedFilename}`;
-        return res.json({
-          success: true,
-          url: publicUrl,
-          filename: matchedFilename,
-          size: req.file.size,
-          isDuplicate: true,
-          message: 'Ảnh đã tồn tại trên hệ thống, tự động tái sử dụng file cũ để tiết kiệm bộ nhớ'
-        });
+        const matchedPath = path.join(uploadsDir, matchedFilename);
+        if (fs.existsSync(matchedPath)) {
+          return res.json({
+            success: true,
+            url: `/uploads/idols/${matchedFilename}`,
+            filename: matchedFilename,
+            size: req.file.size,
+            isDuplicate: true,
+            message: 'Ảnh đã tồn tại trên hệ thống, tự động tái sử dụng file cũ để tiết kiệm bộ nhớ'
+          });
+        }
+        hashIndex.delete(fileHash);
       }
 
-      // 3. Nếu là file mới hoàn toàn: Đặt tên chuẩn có hash duy nhất và ghi xuống đĩa
-      const ext = path.extname(req.file.originalname).toLowerCase() || '.jpg';
-      const cleanOriginalName = path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
+      const rawExt = path.extname(req.file.originalname).toLowerCase();
+      const allowedExts = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+      const ext = allowedExts.has(rawExt) ? rawExt : '.jpg';
+      const cleanOriginalName = path.basename(req.file.originalname, rawExt).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
       const newFilename = `idol_${fileHash.slice(0, 12)}_${cleanOriginalName}${ext}`;
       const newFilePath = path.join(uploadsDir, newFilename);
 
-      fs.writeFileSync(newFilePath, fileBuffer);
+      await fs.promises.writeFile(newFilePath, fileBuffer);
+      hashIndex.set(fileHash, newFilename);
 
       return res.json({
         success: true,
@@ -243,6 +272,13 @@ async function startServer() {
 
   app.get('/api/idols/:id/salary-history', async (req, res) => {
     try {
+      const requestUser = (req as any).authUser || await getRequestUser(req);
+      if (!requestUser) return res.status(401).json({ error: 'Thiếu định danh người dùng' });
+      const isSelf = Boolean(requestUser.idolId && Number(requestUser.idolId) === Number(req.params.id));
+      const canReadPayroll = isSuperAdmin(requestUser) || hasAnyAction(requestUser, ['manage_payroll', 'adjust_payroll', 'approve_payroll']);
+      if (!isSelf && !canReadPayroll) {
+        return res.status(403).json({ error: 'Không có quyền xem lịch sử lương của nhân sự khác' });
+      }
       res.json(await dbStore.getPersonnelSalaryHistory(req.params.id));
     } catch (err) {
       res.status(500).json({ error: 'Không thể tải lịch sử lương' });
@@ -916,8 +952,8 @@ async function startServer() {
     try {
       const list = await dbStore.deleteStatus(decodeURIComponent(req.params.name));
       res.json(list);
-    } catch (err) {
-      res.status(400).json({ error: 'Lỗi xóa trạng thái' });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message || 'Lỗi xóa trạng thái' });
     }
   });
 
@@ -1035,10 +1071,14 @@ async function startServer() {
         currentPassword,
         newPassword
       } = req.body;
-      const effectiveUserId = (req as any).authUser?.id ? String((req as any).authUser.id) : userId;
-      if (!effectiveUserId) {
-        return res.status(400).json({ error: 'Thiếu thông tin người dùng' });
+      const requestUser = (req as any).authUser || await getRequestUser(req);
+      if (!requestUser) {
+        return res.status(401).json({ error: 'Thiếu định danh người dùng' });
       }
+      if (userId !== undefined && userId !== null && String(userId) !== String(requestUser.id)) {
+        return res.status(403).json({ error: 'Không có quyền cập nhật hồ sơ của tài khoản khác' });
+      }
+      const effectiveUserId = String(requestUser.id);
       const result = await dbStore.updateUserProfile(effectiveUserId, {
         name,
         realName,
@@ -1115,6 +1155,30 @@ async function startServer() {
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: 'Lỗi đồng bộ tài khoản từ danh sách Idol' });
+    }
+  });
+
+  app.get('/api/admin/audit-logs', async (req, res) => {
+    try {
+      if (!(await requireSuperAdmin(req, res))) return;
+      const statusCodeRaw = req.query.statusCode ? Number(req.query.statusCode) : undefined;
+      const categoryRaw = typeof req.query.category === 'string' ? req.query.category : undefined;
+      const statusGroupRaw = typeof req.query.statusGroup === 'string' ? req.query.statusGroup : undefined;
+      const result = await dbStore.getAuditLogs({
+        page: req.query.page ? Number(req.query.page) : 1,
+        limit: req.query.limit ? Number(req.query.limit) : 25,
+        search: typeof req.query.search === 'string' ? req.query.search : undefined,
+        method: typeof req.query.method === 'string' ? req.query.method : undefined,
+        resource: typeof req.query.resource === 'string' ? req.query.resource : undefined,
+        statusCode: statusCodeRaw && Number.isInteger(statusCodeRaw) ? statusCodeRaw : undefined,
+        category: categoryRaw === 'data' || categoryRaw === 'auth' ? categoryRaw : 'all',
+        statusGroup: statusGroupRaw === '2xx' || statusGroupRaw === '4xx_5xx' ? statusGroupRaw : 'all',
+        fromDate: typeof req.query.fromDate === 'string' ? req.query.fromDate : undefined,
+        toDate: typeof req.query.toDate === 'string' ? req.query.toDate : undefined,
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Lỗi tải nhật ký hệ thống' });
     }
   });
 
@@ -1479,7 +1543,13 @@ async function startServer() {
   // Lấy danh sách phiếu lương cá nhân của user đang đăng nhập
   app.get('/api/payrolls/my-payslips/:userId', async (req, res) => {
     try {
+      const requestUser = (req as any).authUser || await getRequestUser(req);
+      if (!requestUser) return res.status(401).json({ error: 'Thiếu định danh người dùng' });
       const { userId } = req.params;
+      const canReadOthers = isSuperAdmin(requestUser) || hasAnyAction(requestUser, ['manage_payroll', 'adjust_payroll', 'approve_payroll']);
+      if (!canReadOthers && String(requestUser.id) !== String(userId)) {
+        return res.status(403).json({ error: 'Không có quyền xem phiếu lương của tài khoản khác' });
+      }
       const payslips = await dbStore.getMyPayslips(userId);
       res.json(payslips);
     } catch (err) {
@@ -1885,7 +1955,7 @@ async function startServer() {
   app.get('/api/finance/pnl-summary', async (req, res) => {
     try {
       const scope = (req.query.scope as any) || 'month';
-      const periodRef = (req.query.periodRef as string) || (req.query.period as string) || '2025-10';
+      const periodRef = (req.query.periodRef as string) || (req.query.period as string) || undefined;
       const summary = await dbStore.getFinancePnLSummary(scope, periodRef);
       res.json(summary);
     } catch (err: any) {
@@ -1895,7 +1965,7 @@ async function startServer() {
 
   app.get('/api/finance/trend-series', async (req, res) => {
     try {
-      const periodRef = (req.query.periodRef as string) || '2025-10';
+      const periodRef = (req.query.periodRef as string) || undefined;
       const count = Number(req.query.count) || 6;
       const trendData = await dbStore.getFinanceTrendSeries(periodRef, count);
       res.json(trendData);

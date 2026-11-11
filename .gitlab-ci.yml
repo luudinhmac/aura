@@ -9,7 +9,7 @@ workflow:
     - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
-        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|\.agents/|\.vscode/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
+        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
     - when: never
 
 docs_only:
@@ -21,7 +21,7 @@ docs_only:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
-        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|\.agents/|\.vscode/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
+        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - when: never
@@ -60,11 +60,11 @@ verify:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
-        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|\.agents/|\.vscode/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
+        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
     - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
-        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|\.agents/|\.vscode/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
+        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
 
 .vm_deploy:
   tags:
@@ -107,7 +107,7 @@ deploy_staging:
     - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
-        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|\.agents/|\.vscode/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
+        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
 
 deploy_production:
   extends: .vm_deploy
@@ -127,6 +127,6 @@ deploy_production:
       allow_failure: false
     - if: '$CI_COMMIT_BRANCH == "main"'
       changes:
-        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|\.agents/|\.vscode/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
+        regexp: '\A(?!(?:docs/|prisma/migrations-archive/|(?:\.gitignore|\.gitattributes|metadata\.json)\z|[^/]+\.md\z)).+'
       when: manual
       allow_failure: false
