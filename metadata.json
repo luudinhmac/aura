@@ -1,0 +1,6 @@
+{
+  "name": "Aura Talent - Hệ Thống Quản Lý Idol & Nhân Sự Nghệ Thuật",
+  "description": "Nền tảng quản lý idol chuyên nghiệp: hồ sơ nhân sự, bảng điểm đánh giá theo tiêu chí động, xếp hạng tự động giải quyết hòa điểm, theo dõi công việc task/subtask và dashboard thống kê biểu đồ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

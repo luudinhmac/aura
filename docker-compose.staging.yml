@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${STAGING_POSTGRES_DB:?STAGING_POSTGRES_DB is required}
+      POSTGRES_USER: ${STAGING_POSTGRES_USER:?STAGING_POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${STAGING_POSTGRES_PASSWORD:?STAGING_POSTGRES_PASSWORD is required}
+    volumes:
+      - staging_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - staging-network
+
+  migrate:
+    image: aura-talent:${AURA_IMAGE_TAG:?AURA_IMAGE_TAG is required}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: ${STAGING_DATABASE_URL:?STAGING_DATABASE_URL is required}
+    command: ["pnpm", "exec", "prisma", "migrate", "deploy"]
+    networks:
+      - staging-network
+
+  app:
+    image: aura-talent:${AURA_IMAGE_TAG:?AURA_IMAGE_TAG is required}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: ${STAGING_DATABASE_URL:?STAGING_DATABASE_URL is required}
+      JWT_SECRET: ${STAGING_JWT_SECRET:?STAGING_JWT_SECRET is required}
+      BOOTSTRAP_ADMIN_PASSWORD: ${STAGING_BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_IF_EMPTY: ${STAGING_BOOTSTRAP_ADMIN_IF_EMPTY:-true}
+    volumes:
+      - staging_uploads:/app/uploads
+    ports:
+      - "127.0.0.1:13001:3000"
+    networks:
+      staging-network:
+        aliases:
+          - staging-app
+
+volumes:
+  staging_pgdata:
+  staging_uploads:
+
+networks:
+  staging-network:
+    driver: bridge

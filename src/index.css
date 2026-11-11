@@ -1,0 +1,344 @@
+@import "tailwindcss";
+
+/* The application owns the theme switch. Keep Tailwind's dark utilities
+   synchronized with html.dark instead of the operating-system preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+}
+
+html {
+  font-size: 13.5px;
+}
+
+@media (min-width: 1920px) {
+  html {
+    font-size: 14.5px;
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.dark body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+html.dark .bg-white { background-color: #172033; }
+html.dark [class~="bg-white/95"], html.dark [class~="bg-white/90"], html.dark [class~="bg-white/80"], html.dark [class~="bg-white/70"], html.dark [class~="bg-white/60"], html.dark [class~="bg-white/50"] { background-color: #172033; }
+html.dark .bg-slate-50, html.dark .bg-slate-50\/50 { background-color: #0f172a; }
+html.dark [class~="bg-slate-50/90"], html.dark [class~="bg-slate-50/80"], html.dark [class~="bg-slate-50/70"], html.dark [class~="bg-slate-50/60"], html.dark [class~="bg-slate-50/50"], html.dark [class~="bg-slate-50/40"], html.dark [class~="bg-slate-50/30"] { background-color: #111827; }
+html.dark .bg-slate-100 { background-color: #1e293b; }
+html.dark [class~="bg-slate-100/90"], html.dark [class~="bg-slate-100/80"], html.dark [class~="bg-slate-100/70"], html.dark [class~="bg-slate-100/60"] { background-color: #1e293b; }
+html.dark .bg-slate-200 { background-color: #334155; }
+html.dark [class~="bg-slate-200/90"], html.dark [class~="bg-slate-200/80"], html.dark [class~="bg-slate-200/70"], html.dark [class~="bg-slate-200/60"], html.dark [class~="bg-slate-200/50"] { background-color: #334155; }
+html.dark .bg-slate-300 { background-color: #475569; }
+html.dark .text-slate-900, html.dark .text-slate-800 { color: #f1f5f9; }
+html.dark .text-slate-700 { color: #e2e8f0; }
+html.dark .text-slate-600 { color: #cbd5e1; }
+html.dark .text-slate-500 { color: #94a3b8; }
+html.dark .text-slate-400 { color: #94a3b8; }
+html.dark .border-slate-200, html.dark .border-slate-200\/90 { border-color: #334155; }
+html.dark .border-slate-300 { border-color: #475569; }
+html.dark input, html.dark textarea, html.dark select {
+  background-color: #172033;
+  color: #e2e8f0;
+  border-color: #475569;
+}
+html.dark input::placeholder, html.dark textarea::placeholder { color: #64748b; }
+html.dark .hover\:bg-slate-50:hover { background-color: #1e293b; }
+html.dark .hover\:bg-slate-100:hover { background-color: #334155; }
+
+/* Dark-mode hover surfaces: table rows and cards frequently use opacity
+   variants (for example hover:bg-slate-50/70). Keep the hover state dark,
+   clearly separated from the base surface, and preserve text contrast. */
+html.dark [class~="hover:bg-slate-50/90"]:hover,
+html.dark [class~="hover:bg-slate-50/80"]:hover,
+html.dark [class~="hover:bg-slate-50/70"]:hover,
+html.dark [class~="hover:bg-slate-50/60"]:hover,
+html.dark [class~="hover:bg-slate-50/50"]:hover,
+html.dark [class~="hover:bg-slate-50/40"]:hover,
+html.dark [class~="hover:bg-slate-50/30"]:hover,
+html.dark [class~="hover:bg-white"]:hover {
+  background-color: #263b59;
+}
+
+html.dark [class~="hover:bg-slate-100/90"]:hover,
+html.dark [class~="hover:bg-slate-100/80"]:hover,
+html.dark [class~="hover:bg-slate-100/70"]:hover,
+html.dark [class~="hover:bg-slate-100/60"]:hover,
+html.dark [class~="hover:bg-slate-100/50"]:hover {
+  background-color: #334b6b;
+}
+
+/* Personnel form surfaces: keep section hierarchy neutral and use accent
+   colors for selection/status only. */
+[data-personnel-form] [class~="bg-gradient-to-r"],
+[data-personnel-form] [class~="bg-emerald-50/70"],
+[data-personnel-form] [class~="bg-purple-50/70"],
+[data-personnel-form] [class~="bg-rose-50/70"],
+[data-personnel-form] [class~="bg-emerald-50/90"],
+[data-personnel-form] [class~="bg-purple-50/90"],
+[data-personnel-form] [class~="bg-rose-50/90"] {
+  background-image: none !important;
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.dark [data-personnel-form] [class~="bg-gradient-to-r"],
+html.dark [data-personnel-form] [class~="bg-emerald-50/70"],
+html.dark [data-personnel-form] [class~="bg-purple-50/70"],
+html.dark [data-personnel-form] [class~="bg-rose-50/70"],
+html.dark [data-personnel-form] [class~="bg-emerald-50/90"],
+html.dark [data-personnel-form] [class~="bg-purple-50/90"],
+html.dark [data-personnel-form] [class~="bg-rose-50/90"] {
+  background-image: none !important;
+  background-color: #172033 !important;
+  border-color: #475569 !important;
+}
+
+html.dark [class~="hover:bg-slate-200/80"]:hover,
+html.dark [class~="hover:bg-slate-200/70"]:hover,
+html.dark [class~="hover:bg-slate-200/60"]:hover,
+html.dark [class~="hover:bg-slate-200/50"]:hover {
+  background-color: #405a7c;
+}
+
+/* Dark-mode semantic hover variants: prevent translucent light tints from
+   reverting to pale Tailwind surfaces on tables, cards, tabs, and menus. */
+html.dark [class~="hover:bg-rose-50/90"]:hover,
+html.dark [class~="hover:bg-rose-50/80"]:hover,
+html.dark [class~="hover:bg-rose-50/70"]:hover,
+html.dark [class~="hover:bg-rose-50/60"]:hover,
+html.dark [class~="hover:bg-rose-50/50"]:hover,
+html.dark [class~="hover:bg-rose-50/40"]:hover,
+html.dark [class~="hover:bg-rose-50/30"]:hover,
+html.dark [class~="hover:bg-rose-50/20"]:hover {
+  background-color: #3a1f2c;
+}
+
+html.dark [class~="hover:bg-amber-50/90"]:hover,
+html.dark [class~="hover:bg-amber-50/80"]:hover,
+html.dark [class~="hover:bg-amber-50/70"]:hover,
+html.dark [class~="hover:bg-amber-50/60"]:hover,
+html.dark [class~="hover:bg-amber-50/50"]:hover,
+html.dark [class~="hover:bg-amber-50/40"]:hover,
+html.dark [class~="hover:bg-amber-50/30"]:hover,
+html.dark [class~="hover:bg-amber-50/20"]:hover {
+  background-color: #45351c;
+}
+
+html.dark [class~="hover:bg-indigo-50/90"]:hover,
+html.dark [class~="hover:bg-indigo-50/80"]:hover,
+html.dark [class~="hover:bg-indigo-50/70"]:hover,
+html.dark [class~="hover:bg-indigo-50/60"]:hover,
+html.dark [class~="hover:bg-indigo-50/50"]:hover,
+html.dark [class~="hover:bg-indigo-50/40"]:hover,
+html.dark [class~="hover:bg-indigo-50/30"]:hover,
+html.dark [class~="hover:bg-indigo-50/20"]:hover {
+  background-color: #292d55;
+}
+
+html.dark [class~="hover:bg-purple-50/90"]:hover,
+html.dark [class~="hover:bg-purple-50/80"]:hover,
+html.dark [class~="hover:bg-purple-50/70"]:hover,
+html.dark [class~="hover:bg-purple-50/60"]:hover,
+html.dark [class~="hover:bg-purple-50/50"]:hover,
+html.dark [class~="hover:bg-purple-50/40"]:hover,
+html.dark [class~="hover:bg-purple-50/30"]:hover,
+html.dark [class~="hover:bg-purple-50/20"]:hover {
+  background-color: #352550;
+}
+
+html.dark [class~="hover:bg-sky-50/90"]:hover,
+html.dark [class~="hover:bg-sky-50/80"]:hover,
+html.dark [class~="hover:bg-sky-50/70"]:hover,
+html.dark [class~="hover:bg-sky-50/60"]:hover,
+html.dark [class~="hover:bg-sky-50/50"]:hover,
+html.dark [class~="hover:bg-sky-50/40"]:hover,
+html.dark [class~="hover:bg-sky-50/30"]:hover,
+html.dark [class~="hover:bg-sky-50/20"]:hover {
+  background-color: #1d3b55;
+}
+
+html.dark [class~="hover:bg-emerald-50/90"]:hover,
+html.dark [class~="hover:bg-emerald-50/80"]:hover,
+html.dark [class~="hover:bg-emerald-50/70"]:hover,
+html.dark [class~="hover:bg-emerald-50/60"]:hover,
+html.dark [class~="hover:bg-emerald-50/50"]:hover,
+html.dark [class~="hover:bg-emerald-50/40"]:hover,
+html.dark [class~="hover:bg-emerald-50/30"]:hover,
+html.dark [class~="hover:bg-emerald-50/20"]:hover {
+  background-color: #19483a;
+}
+
+html.dark [class~="hover:bg-white/60"]:hover,
+html.dark [class~="hover:bg-white/50"]:hover,
+html.dark [class~="hover:bg-white/25"]:hover,
+html.dark [class~="hover:bg-white/20"]:hover,
+html.dark [class~="hover:bg-white/10"]:hover {
+  background-color: #263b59;
+}
+
+/* Keep semantic accent surfaces readable in dark mode. These selectors cover
+   the light Tailwind tint utilities used by badges, cards, alerts and tabs. */
+html.dark [class~="bg-rose-50"], html.dark [class~="bg-rose-50/90"], html.dark [class~="bg-rose-50/80"], html.dark [class~="bg-rose-50/70"], html.dark [class~="bg-rose-50/60"], html.dark [class~="bg-rose-50/50"], html.dark [class~="bg-rose-50/40"], html.dark [class~="bg-rose-50/30"] { background-color: #2a1824; }
+html.dark [class~="bg-rose-100"], html.dark [class~="bg-rose-100/90"], html.dark [class~="bg-rose-100/80"], html.dark [class~="bg-rose-100/70"], html.dark [class~="bg-rose-100/60"], html.dark [class~="bg-rose-100/50"] { background-color: #3a1f2c; }
+html.dark [class~="bg-amber-50"], html.dark [class~="bg-amber-50/90"], html.dark [class~="bg-amber-50/80"], html.dark [class~="bg-amber-50/70"], html.dark [class~="bg-amber-50/60"], html.dark [class~="bg-amber-50/50"], html.dark [class~="bg-amber-50/40"], html.dark [class~="bg-amber-50/30"] { background-color: #332718; }
+html.dark [class~="bg-amber-100"], html.dark [class~="bg-amber-100/90"], html.dark [class~="bg-amber-100/80"], html.dark [class~="bg-amber-100/70"], html.dark [class~="bg-amber-100/60"], html.dark [class~="bg-amber-100/50"] { background-color: #45351c; }
+html.dark [class~="bg-indigo-50"], html.dark [class~="bg-indigo-50/90"], html.dark [class~="bg-indigo-50/80"], html.dark [class~="bg-indigo-50/70"], html.dark [class~="bg-indigo-50/60"], html.dark [class~="bg-indigo-50/50"], html.dark [class~="bg-indigo-50/40"], html.dark [class~="bg-indigo-50/30"] { background-color: #1d2140; }
+html.dark [class~="bg-indigo-100"], html.dark [class~="bg-indigo-100/90"], html.dark [class~="bg-indigo-100/80"], html.dark [class~="bg-indigo-100/70"], html.dark [class~="bg-indigo-100/60"], html.dark [class~="bg-indigo-100/50"] { background-color: #292d55; }
+html.dark [class~="bg-purple-50"], html.dark [class~="bg-purple-50/90"], html.dark [class~="bg-purple-50/80"], html.dark [class~="bg-purple-50/70"], html.dark [class~="bg-purple-50/60"], html.dark [class~="bg-purple-50/50"], html.dark [class~="bg-purple-50/40"], html.dark [class~="bg-purple-50/30"] { background-color: #271d3b; }
+html.dark [class~="bg-purple-100"], html.dark [class~="bg-purple-100/90"], html.dark [class~="bg-purple-100/80"], html.dark [class~="bg-purple-100/70"], html.dark [class~="bg-purple-100/60"], html.dark [class~="bg-purple-100/50"] { background-color: #352550; }
+html.dark [class~="bg-sky-50"], html.dark [class~="bg-sky-50/90"], html.dark [class~="bg-sky-50/80"], html.dark [class~="bg-sky-50/70"], html.dark [class~="bg-sky-50/60"], html.dark [class~="bg-sky-50/50"], html.dark [class~="bg-sky-50/40"], html.dark [class~="bg-sky-50/30"] { background-color: #142b3e; }
+html.dark [class~="bg-sky-100"], html.dark [class~="bg-sky-100/90"], html.dark [class~="bg-sky-100/80"], html.dark [class~="bg-sky-100/70"], html.dark [class~="bg-sky-100/60"], html.dark [class~="bg-sky-100/50"] { background-color: #1d3b55; }
+html.dark [class~="bg-emerald-50"], html.dark [class~="bg-emerald-50/90"], html.dark [class~="bg-emerald-50/80"], html.dark [class~="bg-emerald-50/70"], html.dark [class~="bg-emerald-50/60"], html.dark [class~="bg-emerald-50/50"], html.dark [class~="bg-emerald-50/40"], html.dark [class~="bg-emerald-50/30"] { background-color: #123229; }
+html.dark [class~="bg-emerald-100"], html.dark [class~="bg-emerald-100/90"], html.dark [class~="bg-emerald-100/80"], html.dark [class~="bg-emerald-100/70"], html.dark [class~="bg-emerald-100/60"], html.dark [class~="bg-emerald-100/50"] { background-color: #19483a; }
+html.dark [class~="bg-pink-50"], html.dark [class~="bg-pink-50/90"], html.dark [class~="bg-pink-50/80"], html.dark [class~="bg-pink-50/70"], html.dark [class~="bg-pink-50/60"], html.dark [class~="bg-pink-50/50"], html.dark [class~="bg-pink-50/40"] { background-color: #2c1829; }
+html.dark [class~="bg-orange-50"], html.dark [class~="bg-orange-50/90"], html.dark [class~="bg-orange-50/80"], html.dark [class~="bg-orange-50/70"], html.dark [class~="bg-orange-50/60"], html.dark [class~="bg-orange-50/50"] { background-color: #332318; }
+html.dark [class~="bg-teal-50"], html.dark [class~="bg-teal-50/90"], html.dark [class~="bg-teal-50/80"], html.dark [class~="bg-teal-50/70"], html.dark [class~="bg-teal-50/60"], html.dark [class~="bg-teal-50/50"] { background-color: #123331; }
+html.dark [class~="bg-cyan-50"], html.dark [class~="bg-cyan-50/90"], html.dark [class~="bg-cyan-50/80"], html.dark [class~="bg-cyan-50/70"], html.dark [class~="bg-cyan-50/60"], html.dark [class~="bg-cyan-50/50"] { background-color: #122d3a; }
+
+html.dark [class~="text-rose-700"], html.dark [class~="text-rose-800"], html.dark [class~="text-rose-900"], html.dark [class~="text-rose-950"] { color: #fecdd3; }
+html.dark [class~="text-amber-700"], html.dark [class~="text-amber-800"], html.dark [class~="text-amber-900"], html.dark [class~="text-amber-950"] { color: #fde68a; }
+html.dark [class~="text-indigo-700"], html.dark [class~="text-indigo-800"], html.dark [class~="text-indigo-900"], html.dark [class~="text-indigo-950"] { color: #c7d2fe; }
+html.dark [class~="text-purple-700"], html.dark [class~="text-purple-800"], html.dark [class~="text-purple-900"], html.dark [class~="text-purple-950"] { color: #e9d5ff; }
+html.dark [class~="text-sky-700"], html.dark [class~="text-sky-800"], html.dark [class~="text-sky-900"], html.dark [class~="text-sky-950"] { color: #bae6fd; }
+html.dark [class~="text-emerald-700"], html.dark [class~="text-emerald-800"], html.dark [class~="text-emerald-900"], html.dark [class~="text-emerald-950"] { color: #a7f3d0; }
+html.dark [class~="text-pink-700"], html.dark [class~="text-pink-800"], html.dark [class~="text-pink-900"], html.dark [class~="text-pink-950"] { color: #fbcfe8; }
+html.dark [class~="text-orange-700"], html.dark [class~="text-orange-800"], html.dark [class~="text-orange-900"], html.dark [class~="text-orange-950"] { color: #fed7aa; }
+html.dark [class~="text-teal-700"], html.dark [class~="text-teal-800"], html.dark [class~="text-teal-900"], html.dark [class~="text-teal-950"] { color: #99f6e4; }
+html.dark [class~="text-cyan-700"], html.dark [class~="text-cyan-800"], html.dark [class~="text-cyan-900"], html.dark [class~="text-cyan-950"] { color: #a5f3fc; }
+
+/* Keep the darkest semantic text utilities readable on dark surfaces. A few
+   forms use 900/950 shades for headings and helper text, which otherwise
+   become nearly invisible after their light backgrounds are remapped. */
+html.dark [class~="text-emerald-900"], html.dark [class~="text-emerald-950"] { color: #d1fae5; }
+html.dark [class~="text-amber-900"], html.dark [class~="text-amber-950"] { color: #fef3c7; }
+html.dark [class~="text-indigo-900"], html.dark [class~="text-indigo-950"] { color: #e0e7ff; }
+html.dark [class~="text-purple-900"], html.dark [class~="text-purple-950"] { color: #f3e8ff; }
+html.dark [class~="text-rose-900"], html.dark [class~="text-rose-950"] { color: #ffe4e6; }
+html.dark [class~="text-slate-950"] { color: #f8fafc; }
+
+html.dark [class~="border-rose-100"], html.dark [class~="border-rose-200"], html.dark [class~="border-rose-300"] { border-color: #6b3a54; }
+html.dark [class~="border-amber-100"], html.dark [class~="border-amber-200"], html.dark [class~="border-amber-300"] { border-color: #7a5a20; }
+html.dark [class~="border-indigo-100"], html.dark [class~="border-indigo-200"], html.dark [class~="border-indigo-300"] { border-color: #4c568f; }
+html.dark [class~="border-purple-100"], html.dark [class~="border-purple-200"], html.dark [class~="border-purple-300"] { border-color: #63458c; }
+html.dark [class~="border-sky-100"], html.dark [class~="border-sky-200"], html.dark [class~="border-sky-300"] { border-color: #356486; }
+html.dark [class~="border-emerald-100"], html.dark [class~="border-emerald-200"], html.dark [class~="border-emerald-300"] { border-color: #34755f; }
+html.dark [class~="border-pink-100"], html.dark [class~="border-pink-200"], html.dark [class~="border-pink-300"] { border-color: #713b63; }
+html.dark [class~="border-orange-100"], html.dark [class~="border-orange-200"], html.dark [class~="border-orange-300"] { border-color: #79502a; }
+html.dark [class~="border-teal-100"], html.dark [class~="border-teal-200"], html.dark [class~="border-teal-300"] { border-color: #34776f; }
+html.dark [class~="border-cyan-100"], html.dark [class~="border-cyan-200"], html.dark [class~="border-cyan-300"] { border-color: #326577; }
+
+/* Modal/form surfaces: keep nested panels consistently dark even when the
+   component intentionally uses light Tailwind utility classes for light mode. */
+html.dark .fixed.inset-0.z-50 [class~="bg-white"] { background-color: #172033; }
+html.dark .fixed.inset-0.z-50 [class~="bg-slate-50"] { background-color: #111827; }
+html.dark .fixed.inset-0.z-50 [class~="bg-slate-50/80"],
+html.dark .fixed.inset-0.z-50 [class~="bg-slate-50/90"] { background-color: #172033; }
+html.dark .fixed.inset-0.z-50 [class~="bg-amber-50/70"] { background-color: #332718; }
+html.dark .fixed.inset-0.z-50 [class~="bg-emerald-50/70"],
+html.dark .fixed.inset-0.z-50 [class~="bg-emerald-50/90"] { background-color: #123229; }
+html.dark .fixed.inset-0.z-50 [class~="bg-purple-50/70"],
+html.dark .fixed.inset-0.z-50 [class~="bg-purple-50/90"] { background-color: #271d3b; }
+html.dark .fixed.inset-0.z-50 [class~="bg-indigo-50/90"] { background-color: #1d2140; }
+
+/* Selected and hover states must remain visibly distinct without turning into
+   a pale grey block that hides the text. */
+html.dark .fixed.inset-0.z-50 [class~="hover:bg-white"]:hover { background-color: #263b59; }
+html.dark .fixed.inset-0.z-50 [class~="hover:bg-emerald-50/20"]:hover { background-color: #19483a; }
+html.dark .fixed.inset-0.z-50 [class~="hover:bg-purple-50/20"]:hover { background-color: #352550; }
+html.dark .fixed.inset-0.z-50 [class~="hover:bg-rose-50/20"]:hover { background-color: #3a1f2c; }
+
+/* Common light-mode text colors used inside the modal. */
+html.dark .fixed.inset-0.z-50 [class~="text-slate-900"],
+html.dark .fixed.inset-0.z-50 [class~="text-slate-800"] { color: #f1f5f9; }
+html.dark .fixed.inset-0.z-50 [class~="text-slate-700"] { color: #e2e8f0; }
+html.dark .fixed.inset-0.z-50 [class~="text-slate-600"] { color: #cbd5e1; }
+html.dark .fixed.inset-0.z-50 [class~="text-slate-500"] { color: #94a3b8; }
+html.dark .fixed.inset-0.z-50 input::placeholder,
+html.dark .fixed.inset-0.z-50 textarea::placeholder { color: #94a3b8; }
+
+html.dark .hover\:bg-rose-50:hover { background-color: #3a1f2c; }
+html.dark .hover\:bg-amber-50:hover { background-color: #45351c; }
+html.dark .hover\:bg-indigo-50:hover { background-color: #292d55; }
+html.dark .hover\:bg-purple-50:hover { background-color: #352550; }
+html.dark .hover\:bg-sky-50:hover { background-color: #1d3b55; }
+html.dark .hover\:bg-emerald-50:hover { background-color: #19483a; }
+html.dark .hover\:bg-pink-50:hover { background-color: #3d2138; }
+html.dark .hover\:bg-orange-50:hover { background-color: #49301f; }
+html.dark .hover\:bg-teal-50:hover { background-color: #194640; }
+html.dark .hover\:bg-cyan-50:hover { background-color: #1b4050; }
+
+/* Tailwind gradient stops also need dark values; otherwise large panels can
+   remain almost white even when their base surface is remapped. */
+html.dark [class~="from-purple-50"] { --tw-gradient-from: #271d3b var(--tw-gradient-from-position); --tw-gradient-to: rgb(39 29 59 / 0) var(--tw-gradient-to-position); }
+html.dark [class~="via-indigo-50"] { --tw-gradient-to: rgb(29 33 64 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #1d2140 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+html.dark [class~="to-sky-50"] { --tw-gradient-to: #142b3e var(--tw-gradient-to-position); }
+html.dark [class~="from-rose-50"], html.dark [class~="from-rose-50/90"] { --tw-gradient-from: #2a1824 var(--tw-gradient-from-position); --tw-gradient-to: rgb(42 24 36 / 0) var(--tw-gradient-to-position); }
+html.dark [class~="to-amber-50"] { --tw-gradient-to: #332718 var(--tw-gradient-to-position); }
+html.dark [class~="from-slate-50"] { --tw-gradient-from: #111827 var(--tw-gradient-from-position); --tw-gradient-to: rgb(17 24 39 / 0) var(--tw-gradient-to-position); }
+html.dark [class~="to-slate-50/50"] { --tw-gradient-to: #172033 var(--tw-gradient-to-position); }
+html.dark [class~="to-white"] { --tw-gradient-to: #172033 var(--tw-gradient-to-position); }
+html.dark [class~="via-white"] { --tw-gradient-to: rgb(23 32 51 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #172033 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+html.dark [class~="from-indigo-50/90"] { --tw-gradient-from: #1d2140 var(--tw-gradient-from-position); --tw-gradient-to: rgb(29 33 64 / 0) var(--tw-gradient-to-position); }
+html.dark [class~="to-indigo-50"], html.dark [class~="to-indigo-50/50"] { --tw-gradient-to: #1d2140 var(--tw-gradient-to-position); }
+html.dark [class~="from-purple-50/90"] { --tw-gradient-from: #271d3b var(--tw-gradient-from-position); --tw-gradient-to: rgb(39 29 59 / 0) var(--tw-gradient-to-position); }
+html.dark [class~="to-purple-50"], html.dark [class~="to-purple-50/50"], html.dark [class~="to-purple-50/40"] { --tw-gradient-to: #271d3b var(--tw-gradient-to-position); }
+html.dark [class~="from-amber-50/50"], html.dark [class~="from-amber-50/90"] { --tw-gradient-from: #332718 var(--tw-gradient-from-position); --tw-gradient-to: rgb(51 39 24 / 0) var(--tw-gradient-to-position); }
+html.dark [class~="via-amber-50"], html.dark [class~="via-amber-50/40"], html.dark [class~="via-amber-50/50"] { --tw-gradient-to: rgb(51 39 24 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #332718 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+html.dark [class~="via-sky-50/60"] { --tw-gradient-to: rgb(20 43 62 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #142b3e var(--tw-gradient-via-position), var(--tw-gradient-to); }
+html.dark [class~="to-sky-50/60"] { --tw-gradient-to: #142b3e var(--tw-gradient-to-position); }
+html.dark [class~="from-pink-50"], html.dark [class~="from-pink-50/60"] { --tw-gradient-from: #2c1829 var(--tw-gradient-from-position); --tw-gradient-to: rgb(44 24 41 / 0) var(--tw-gradient-to-position); }
+html.dark [class~="via-pink-50"], html.dark [class~="via-pink-50/40"] { --tw-gradient-to: rgb(44 24 41 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #2c1829 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+html.dark [class~="to-pink-50"], html.dark [class~="to-pink-50/40"] { --tw-gradient-to: #2c1829 var(--tw-gradient-to-position); }
+html.dark [class~="from-orange-50"], html.dark [class~="from-orange-50/90"] { --tw-gradient-from: #332318 var(--tw-gradient-from-position); --tw-gradient-to: rgb(51 35 24 / 0) var(--tw-gradient-to-position); }
+html.dark [class~="via-orange-50"], html.dark [class~="via-orange-50/60"] { --tw-gradient-to: rgb(51 35 24 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #332318 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+html.dark [class~="to-orange-50"], html.dark [class~="to-orange-50/30"] { --tw-gradient-to: #332318 var(--tw-gradient-to-position); }
+html.dark [class*="from-emerald-50/90"] { --tw-gradient-from: #123229 !important; --tw-gradient-to: rgb(18 50 41 / 0) !important; }
+html.dark [class*="via-teal-50/50"] { --tw-gradient-to: rgb(18 51 49 / 0) !important; --tw-gradient-stops: var(--tw-gradient-from), #123331 var(--tw-gradient-via-position), var(--tw-gradient-to) !important; }
+html.dark [class*="to-slate-50"] { --tw-gradient-to: #111827 !important; }
+html.dark [class~="to-amber-50/20"] { --tw-gradient-to: #332718 var(--tw-gradient-to-position); }
+html.dark [class~="to-amber-50/30"], html.dark [class~="to-amber-50/40"] { --tw-gradient-to: #332718 var(--tw-gradient-to-position); }
+html.dark [class~="via-red-50/30"] { --tw-gradient-to: rgb(42 24 36 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #2a1824 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+html.dark [class~="via-slate-50/50"] { --tw-gradient-to: rgb(23 32 51 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #172033 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+html.dark .roster-age-header {
+  background-color: #111827;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+html.dark .roster-age-cell {
+  background-color: #172033;
+  color: #fda4af;
+  border-color: #334155;
+}
+html.dark .roster-age-badge {
+  background-color: #3b1f2a;
+  color: #fecdd3;
+  border-color: #7f405b;
+}
+html.dark ::-webkit-scrollbar-thumb { background: #475569; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Custom smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

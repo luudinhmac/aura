@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aura-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aura-network
+
+  migrate:
+    image: aura-talent:${AURA_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aura-migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    command: ["pnpm", "exec", "prisma", "migrate", "deploy"]
+    networks:
+      - aura-network
+
+  app:
+    image: aura-talent:${AURA_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aura-app
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: ${PORT:-3000}
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_IF_EMPTY: ${BOOTSTRAP_ADMIN_IF_EMPTY:-true}
+    volumes:
+      - uploads_data:/app/uploads
+    expose:
+      - "3000"
+    networks:
+      - aura-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: aura-nginx
+    restart: always
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /data/aura-talent/shared/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/aura-ca/certs:/etc/nginx/certs:ro
+      - /opt/aura-ca/private:/etc/nginx/private:ro
+      - uploads_data:/app/uploads:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - aura-network
+      - staging-network
+
+volumes:
+  pgdata:
+  uploads_data:
+
+networks:
+  aura-network:
+    driver: bridge
+  staging-network:
+    name: aura-talent-staging_staging-network
+    external: true

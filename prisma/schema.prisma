@@ -1,0 +1,923 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider   = "prisma-client-js"
+  output     = "./client"
+  engineType = "library"
+}
+
+// ==========================================
+// 1. PHÂN HỆ TÀI KHOẢN & NHÂN SỰ (AUTH & PERSONNEL)
+// ==========================================
+
+model UserAccount {
+  id                 Int      @id @default(autoincrement())
+  username           String   @unique
+  email              String   @unique
+  password           String
+  role               String
+  roleTitle          String
+  accountType        String   @default("personnel") // "system_admin" | "personnel"
+  isSuperAdmin       Boolean  @default(false)
+  isBusinessAdmin    Boolean  @default(false)
+  allowedTabs        Json     @default("[]")
+  allowedDepartments Json     @default("[]")
+  allowedActions     Json     @default("[]")
+  avatarUrl          String?
+  status             String   @default("Đang hoạt động")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  personnelProfile                  Personnel?
+  requestedApprovals                ApprovalRequest[]                  @relation("ApprovalRequestedBy")
+  reviewedApprovals                 ApprovalRequest[]                  @relation("ApprovalReviewedBy")
+  reviewedLeaves                    LeaveRequest[]                     @relation("LeaveReviewedBy")
+  submittedPayrolls                 PayrollPeriod[]                    @relation("PayrollSubmittedBy")
+  approvedPayrolls                  PayrollPeriod[]                    @relation("PayrollApprovedBy")
+  submittedPayrollDisputes          PayrollDispute[]                   @relation("PayrollDisputeSubmittedBy")
+  reviewedPayrollDisputes           PayrollDispute[]                   @relation("PayrollDisputeReviewedBy")
+  createdRevenues                   RevenueTransaction[]               @relation("RevenueCreatedBy")
+  approvedRevenues                  RevenueTransaction[]               @relation("RevenueApprovedBy")
+  createdServiceUsages              ServiceUsageRecord[]                @relation("ServiceUsageCreatedBy")
+  assignedServiceUsages             ServiceUsageRecord[]                @relation("ServiceUsageAssignedTo")
+  serviceUsageAssignments           ServiceUsageAssignee[]
+  paidServiceUsages                 ServiceUsageRecord[]                @relation("ServiceUsagePaidBy")
+  cancelledServiceUsages            ServiceUsageRecord[]                @relation("ServiceUsageCancelledBy")
+  serviceUsagePayments              ServiceUsagePayment[]
+  createdExpenses                   CompanyExpense[]                   @relation("ExpenseCreatedBy")
+  createdWorkAssignments            WorkAssignment[]                   @relation("WorkAssignmentCreatedBy")
+  cancelledWorkAssignments          WorkAssignment[]                   @relation("WorkAssignmentCancelledBy")
+  workAssignmentDelegationsGiven    WorkAssignmentApprovalDelegation[] @relation("WorkAssignmentDelegationDirector")
+  workAssignmentDelegationsReceived WorkAssignmentApprovalDelegation[] @relation("WorkAssignmentDelegationDelegate")
+  workAssignmentDelegationsRevoked  WorkAssignmentApprovalDelegation[] @relation("WorkAssignmentDelegationRevokedBy")
+  authSessions                      AuthSession[]
+  auditLogs                         AuditLog[]
+  createdSalaryHistory              PersonnelSalaryHistory[]
+  roleAssignments                   UserRole[]
+  assignedUserRoles                 UserRole[]                         @relation("RoleAssignedBy")
+
+  @@map("users")
+}
+
+model Role {
+  id                 Int      @id @default(autoincrement())
+  code               String   @unique
+  name               String
+  roleTitle          String
+  department         String?
+  category           String
+  description        String
+  isSystemRole       Boolean  @default(false)
+  defaultTabs        Json     @default("[]")
+  defaultActions     Json     @default("[]")
+  defaultDepartments Json     @default("[]")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  assignments UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId       Int
+  roleId       Int
+  assignedById Int?
+  assignedAt   DateTime @default(now())
+
+  user       UserAccount  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy UserAccount? @relation("RoleAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@index([assignedById])
+  @@map("user_roles")
+}
+
+model AuthSession {
+  id                  String      @id @default(uuid())
+  userId              Int
+  refreshTokenHash    String      @unique
+  expiresAt           DateTime
+  createdAt           DateTime    @default(now())
+  lastUsedAt          DateTime?
+  revokedAt           DateTime?
+  replacedBySessionId String?
+  user                UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model Personnel {
+  id                Int          @id @default(autoincrement())
+  userId            Int?         @unique
+  user              UserAccount? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  stt               Int?
+  stageName         String?
+  realName          String
+  dob               DateTime?    @db.Date
+  joinDate          DateTime?    @db.Date
+  resignedDate      DateTime?    @db.Date
+  role              String
+  weight            Decimal      @default(0) @db.Decimal(5, 2)
+  height            Decimal      @default(0) @db.Decimal(5, 2)
+  hometown          String?
+  currentLiving     String?
+  department        String
+  personnelType     String // "Công ty" | "Outsource" | "Cộng tác viên" | "Thực tập sinh" | "Dịch vụ ngoài"
+  status            String       @default("Đang hoạt động")
+  avatarUrl         String?
+  bio               String?
+  socialLinks       Json         @default("{}")
+  isIdol            Boolean      @default(false)
+  cooperationType   String       @default("internal") // "internal" | "service_guest" | "event_contract"
+  serviceNotes      String?
+  assignedRole      String?
+  phone             String?
+  citizenId         String?
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountName   String?
+  baseSalary        Decimal      @default(0) @db.Decimal(15, 2)
+  idolCategory      String?
+  commercialDetails Json?
+  customFields      Json?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  schedules           WorkSchedule[]
+  tasks               PersonnelTask[]
+  workAssignments     WorkAssignmentAssignee[]
+  leaves              LeaveRequest[]
+  payrollRecords      PayrollRecord[]
+  groupMemberships    KpiGroupMember[]
+  ledGroups           KpiGroup[]               @relation("GroupLeader")
+  individualKpis      KpiSetting[]             @relation("IndividualKpis")
+  operationalMetrics  OperationalMetric[]
+  activities          PersonnelActivity[]
+  scoreRecords        ScoreRecord[]
+  approvalRequests    ApprovalRequest[]
+  revenueTransactions RevenueTransaction[]
+  salaryHistory       PersonnelSalaryHistory[]
+  payrollDisputes     PayrollDispute[]
+  serviceUsageRecords ServiceUsageRecord[]
+
+  @@index([isIdol, personnelType, status])
+  @@map("personnel")
+}
+
+model ServiceUsageRecord {
+  id                   String              @id @default(uuid()) @db.Uuid
+  usageCode            String              @unique
+  personnelId          Int
+  personnel            Personnel           @relation(fields: [personnelId], references: [id], onDelete: Restrict)
+  serviceName          String
+  description          String?
+  usageDate            DateTime            @db.Date
+  startAt              DateTime?
+  endAt                DateTime?
+  quantity             Decimal             @default(1) @db.Decimal(10, 2)
+  unit                 String              @default("lượt")
+  location             String?
+  grossAmount          Decimal             @default(0) @db.Decimal(15, 2)
+  discountAmount       Decimal             @default(0) @db.Decimal(15, 2)
+  netAmount            Decimal             @default(0) @db.Decimal(15, 2)
+  status               String              @default("planned")
+  assignedUserId       Int?
+  assignedUser         UserAccount?        @relation("ServiceUsageAssignedTo", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  assignees            ServiceUsageAssignee[]
+  paymentStatus        String              @default("unpaid")
+  paidAmount           Decimal             @default(0) @db.Decimal(15, 2)
+  outstandingAmount    Decimal             @default(0) @db.Decimal(15, 2)
+  completionProgress   Decimal             @default(0) @db.Decimal(5, 2)
+  contractRef          String?
+  invoiceRef           String?
+  revenueTransactionId String?             @db.Uuid
+  revenueTransaction   RevenueTransaction? @relation(fields: [revenueTransactionId], references: [id], onDelete: SetNull)
+  notes                String?
+  createdById          Int?
+  createdBy            UserAccount?        @relation("ServiceUsageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  paidAt               DateTime?
+  paidById             Int?
+  paidBy               UserAccount?        @relation("ServiceUsagePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  paymentNote          String?
+  cancelledAt          DateTime?
+  cancelledById        Int?
+  cancelledBy          UserAccount?        @relation("ServiceUsageCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancellationReason   String?
+  payments             ServiceUsagePayment[]
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@index([personnelId, usageDate])
+  @@index([status, usageDate])
+  @@index([revenueTransactionId])
+  @@index([assignedUserId, startAt, endAt, status])
+  @@map("service_usage_records")
+}
+
+model ServiceUsageAssignee {
+  serviceUsageId String             @db.Uuid
+  userId         Int
+  serviceUsage   ServiceUsageRecord  @relation(fields: [serviceUsageId], references: [id], onDelete: Cascade)
+  user           UserAccount        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime           @default(now())
+
+  @@id([serviceUsageId, userId])
+  @@index([userId])
+  @@map("service_usage_assignees")
+}
+
+model ServiceUsagePayment {
+  id             String             @id @default(uuid()) @db.Uuid
+  serviceUsageId String             @db.Uuid
+  serviceUsage   ServiceUsageRecord @relation(fields: [serviceUsageId], references: [id], onDelete: Cascade)
+  amount         Decimal            @db.Decimal(15, 2)
+  paidAt         DateTime           @default(now())
+  paidById       Int?
+  paidBy         UserAccount?       @relation(fields: [paidById], references: [id], onDelete: SetNull)
+  reference      String?
+  note           String?
+
+  @@index([serviceUsageId, paidAt])
+  @@map("service_usage_payments")
+}
+
+model PersonnelActivityType {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  description  String?
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  personnelActivities PersonnelActivity[]
+  workSchedules       WorkSchedule[]
+  personnelTasks      PersonnelTask[]
+  kpiSettings         KpiSetting[]
+
+  @@index([isActive, displayOrder])
+  @@map("personnel_activity_types")
+}
+
+model PersonnelActivity {
+  id             String                @id @default(uuid())
+  personnelId    Int
+  personnel      Personnel             @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  activityTypeId Int
+  activityType   PersonnelActivityType @relation(fields: [activityTypeId], references: [id], onDelete: Restrict)
+  isPrimary      Boolean               @default(false)
+  metadata       Json?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@unique([personnelId, activityTypeId])
+  @@index([personnelId, isPrimary])
+  @@index([activityTypeId])
+  @@map("personnel_activities")
+}
+
+model PersonnelColumn {
+  id            String   @id @default(uuid())
+  key           String   @unique
+  label         String
+  type          String
+  options       Json?
+  required      Boolean  @default(false)
+  isVisible     Boolean  @default(true)
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  showInRoster  Boolean  @default(true)
+  showInProfile Boolean  @default(true)
+  sensitivity   String   @default("public")
+  isSystem      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+  @@map("personnel_columns")
+}
+
+// ==========================================
+// 2. PHÂN HỆ VẬN HÀNH, CA TRỰC & NGHỈ PHÉP
+// ==========================================
+
+model WorkSchedule {
+  id             String                 @id @default(uuid()) @db.Uuid
+  personnelId    Int
+  personnel      Personnel              @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  activityTypeId Int?
+  activityType   PersonnelActivityType? @relation(fields: [activityTypeId], references: [id], onDelete: SetNull)
+  dayOfWeek      Int
+  shiftType      String
+  startTime      String
+  endTime        String
+  platform       String
+  title          String
+  notes          String?
+  isActive       Boolean                @default(true)
+  repeatType     String?
+  specificMonth  String?
+  specificDate   DateTime?              @db.Date
+  createdAt      DateTime               @default(now())
+
+  @@index([personnelId, dayOfWeek])
+  @@index([activityTypeId])
+  @@map("work_schedules")
+}
+
+model PersonnelTask {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  personnelId           Int
+  personnel             Personnel              @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  activityTypeId        Int?
+  activityType          PersonnelActivityType? @relation(fields: [activityTypeId], references: [id], onDelete: SetNull)
+  title                 String
+  description           String?
+  category              String
+  status                String                 @default("todo")
+  startTime             DateTime?
+  endTime               DateTime?
+  loggedDurationMinutes Int                    @default(0)
+  subtasks              Json                   @default("[]")
+  dueDate               DateTime?              @db.Date
+  createdAt             DateTime               @default(now())
+
+  @@index([personnelId, status])
+  @@index([activityTypeId])
+  @@map("personnel_tasks")
+}
+
+model WorkAssignment {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  title              String
+  description        String?
+  assignmentType     String
+  mandatory          Boolean                  @default(false)
+  penaltyType        String                   @default("none")
+  penaltyValue       Decimal?                 @db.Decimal(14, 2)
+  startAt            DateTime?
+  endAt              DateTime?
+  acceptanceDeadline DateTime?
+  cancellationReason String?
+  cancelledAt        DateTime?
+  cancelledById      Int?
+  location           String?
+  restDayDate        DateTime?                @db.Date
+  restDayPortion     String                   @default("none")
+  status             String                   @default("published")
+  createdById        Int
+  createdBy          UserAccount              @relation("WorkAssignmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  assignees          WorkAssignmentAssignee[]
+  cancelledBy        UserAccount?             @relation("WorkAssignmentCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+
+  @@index([createdById, status])
+  @@index([status, acceptanceDeadline])
+  @@map("work_assignments")
+}
+
+model WorkAssignmentAssignee {
+  id                  String         @id @default(uuid()) @db.Uuid
+  assignmentId        String         @db.Uuid
+  assignment          WorkAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  personnelId         Int
+  personnel           Personnel      @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  responseStatus      String         @default("pending")
+  responseNote        String?
+  respondedAt         DateTime?
+  completedAt         DateTime?
+  completedNote       String?
+  violationStatus     String         @default("none")
+  penaltyAmount       Decimal?       @db.Decimal(14, 2)
+  violationNote       String?
+  reviewedAt          DateTime?
+  waiverRequestStatus String         @default("none")
+  waiverRequestReason String?
+  waiverRequestedAt   DateTime?
+  waiverDecision      String?
+  penaltyRate         Decimal?       @db.Decimal(5, 2)
+  waiverReviewedAt    DateTime?
+  waiverReviewedById  Int?
+  waiverReviewNote    String?
+  restDayDate         DateTime?      @db.Date
+  restDayPortion      String         @default("none")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@unique([assignmentId, personnelId])
+  @@index([personnelId, responseStatus])
+  @@index([assignmentId, responseStatus])
+  @@map("work_assignment_assignees")
+}
+
+model WorkAssignmentApprovalDelegation {
+  id          String    @id @default(uuid()) @db.Uuid
+  directorId  Int
+  delegateId  Int
+  startsAt    DateTime
+  endsAt      DateTime
+  revokedAt   DateTime?
+  revokedById Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  director  UserAccount  @relation("WorkAssignmentDelegationDirector", fields: [directorId], references: [id], onDelete: Cascade)
+  delegate  UserAccount  @relation("WorkAssignmentDelegationDelegate", fields: [delegateId], references: [id], onDelete: Cascade)
+  revokedBy UserAccount? @relation("WorkAssignmentDelegationRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  @@index([directorId, startsAt, endsAt, revokedAt])
+  @@index([delegateId, startsAt, endsAt, revokedAt])
+  @@map("work_assignment_approval_delegations")
+}
+
+model LeaveRequest {
+  id                   String       @id @default(uuid()) @db.Uuid
+  personnelId          Int
+  personnel            Personnel    @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  personnelName        String
+  department           String
+  leaveType            String
+  startDate            DateTime     @db.Date
+  endDate              DateTime     @db.Date
+  totalDays            Decimal      @db.Decimal(4, 1)
+  annualLeaveDays      Decimal      @default(0) @db.Decimal(4, 1)
+  unpaidLeaveDays      Decimal      @default(0) @db.Decimal(4, 1)
+  allocationConfirmed  Boolean      @default(false)
+  reason               String
+  status               String       @default("pending")
+  approverRoleRequired String?
+  autoApproved         Boolean      @default(false)
+  reviewedById         Int?
+  reviewedBy           UserAccount? @relation("LeaveReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewNote           String?
+  reviewedAt           DateTime?
+  createdAt            DateTime     @default(now())
+
+  @@index([personnelId, status])
+  @@index([status, createdAt])
+  @@map("leave_requests")
+}
+
+model ApprovalRequest {
+  id                String       @id @default(uuid()) @db.Uuid
+  type              String
+  status            String       @default("pending")
+  targetPersonnelId Int?
+  targetPersonnel   Personnel?   @relation(fields: [targetPersonnelId], references: [id], onDelete: SetNull)
+  targetName        String
+  reason            String?
+  data              Json?
+  requestedById     Int
+  requestedBy       UserAccount  @relation("ApprovalRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  reviewedById      Int?
+  reviewedBy        UserAccount? @relation("ApprovalReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewNote        String?
+  createdAt         DateTime     @default(now())
+  reviewedAt        DateTime?
+
+  @@index([status, createdAt])
+  @@index([targetPersonnelId, status])
+  @@map("approval_requests")
+}
+
+// ==========================================
+// 3. PHÂN HỆ TÀI CHÍNH & BẢNG LƯƠNG
+// ==========================================
+
+model PayrollPeriod {
+  id               String       @id // Định dạng: "payroll-YYYY-MM"
+  period           String       @unique // "YYYY-MM"
+  status           String       @default("draft")
+  totalGross       Decimal      @default(0) @db.Decimal(15, 2)
+  totalKpiBonus    Decimal      @default(0) @db.Decimal(15, 2)
+  totalHotBonus    Decimal      @default(0) @db.Decimal(15, 2)
+  totalDeductions  Decimal      @default(0) @db.Decimal(15, 2)
+  totalNet         Decimal      @default(0) @db.Decimal(15, 2)
+  employeeCount    Int          @default(0)
+  submittedById    Int?
+  submittedBy      UserAccount? @relation("PayrollSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  submittedAt      DateTime?
+  approvedById     Int?
+  approvedBy       UserAccount? @relation("PayrollApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt       DateTime?
+  lockedAt         DateTime?
+  feedbackStartsAt DateTime? @db.Date
+  approvalStartsAt DateTime? @db.Date
+  lockStartsAt DateTime? @db.Date
+  createdAt        DateTime     @default(now())
+
+  records  PayrollRecord[]
+  disputes PayrollDispute[]
+
+  @@map("payroll_periods")
+}
+
+model PayrollRecord {
+  id                          String                  @id @default(uuid()) @db.Uuid
+  periodId                    String
+  periodRel                   PayrollPeriod           @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  period                      String
+  personnelId                 Int
+  personnel                   Personnel               @relation(fields: [personnelId], references: [id], onDelete: Restrict)
+  employeeName                String
+  stageName                   String?
+  department                  String
+  personnelType               String
+  isIdol                      Boolean                 @default(false)
+  bankInfo                    Json                    @default("{}")
+  baseSalary                  Decimal                 @default(0) @db.Decimal(15, 2)
+  contractSalarySnapshot      Decimal?                @db.Decimal(15, 2)
+  salaryEffectiveFromSnapshot DateTime?               @db.Date
+  salarySnapshotAt            DateTime?
+  salaryHistoryId             String?                 @db.Uuid
+  salaryHistory               PersonnelSalaryHistory? @relation(fields: [salaryHistoryId], references: [id], onDelete: SetNull)
+  overtimePay                 Decimal                 @default(0) @db.Decimal(15, 2)
+  kpiBonus                    Decimal                 @default(0) @db.Decimal(15, 2)
+  commissionGmv               Decimal                 @default(0) @db.Decimal(15, 2)
+  giftShare                   Decimal                 @default(0) @db.Decimal(15, 2)
+  hotBonus                    Decimal                 @default(0) @db.Decimal(15, 2)
+  totalGross                  Decimal                 @default(0) @db.Decimal(15, 2)
+  totalDeductions             Decimal                 @default(0) @db.Decimal(15, 2)
+  netSalary                   Decimal                 @default(0) @db.Decimal(15, 2)
+  companyInsurance            Decimal                 @default(0) @db.Decimal(15, 2)
+  companyLaborCost            Decimal                 @default(0) @db.Decimal(15, 2)
+  earningsDetail              Json                    @default("{}")
+  deductionsDetail            Json                    @default("{}")
+  paymentStatus               String                  @default("pending")
+  paidAt                      DateTime?
+  paymentRef                  String?
+  adjustmentLogs              Json                    @default("[]")
+  notes                       String?
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @updatedAt
+
+  disputes PayrollDispute[]
+
+  @@unique([periodId, personnelId])
+  @@index([personnelId, period])
+  @@map("payroll_records")
+}
+
+model PayrollDispute {
+  id             String    @id @default(uuid())
+  periodId       String
+  recordId       String    @db.Uuid
+  personnelId    Int
+  submittedById  Int?
+  category       String
+  systemValue    Json      @default("{}")
+  requestedValue Json      @default("{}")
+  reason         String
+  evidenceUrl    String?
+  status         String    @default("submitted")
+  reviewedById   Int?
+  reviewedAt     DateTime?
+  resolutionNote String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  period      PayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  record      PayrollRecord @relation(fields: [recordId], references: [id], onDelete: Restrict)
+  personnel   Personnel     @relation(fields: [personnelId], references: [id], onDelete: Restrict)
+  submittedBy UserAccount?  @relation("PayrollDisputeSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy  UserAccount?  @relation("PayrollDisputeReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([periodId, status])
+  @@index([recordId, status])
+  @@index([personnelId, createdAt])
+  @@index([submittedById, status])
+  @@map("payroll_disputes")
+}
+
+model PersonnelSalaryHistory {
+  id             String          @id @default(uuid()) @db.Uuid
+  personnelId    Int
+  salaryAmount   Decimal         @db.Decimal(15, 2)
+  effectiveFrom  DateTime        @db.Date
+  effectiveTo    DateTime?       @db.Date
+  currency       String          @default("VND")
+  reason         String?
+  source         String          @default("manual")
+  createdById    Int?
+  createdBy      UserAccount?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  personnel      Personnel       @relation(fields: [personnelId], references: [id], onDelete: Restrict)
+  payrollRecords PayrollRecord[]
+
+  @@unique([personnelId, effectiveFrom])
+  @@index([personnelId, effectiveFrom])
+  @@index([createdById])
+  @@map("personnel_salary_history")
+}
+
+// ==========================================
+// 4. PHÂN HỆ KPI & ĐÁNH GIÁ CHUYÊN MÔN
+// ==========================================
+
+model KpiGroup {
+  id          Int        @id @default(autoincrement())
+  name        String
+  description String?
+  type        String
+  category    String     @default("mixed")
+  department  String?
+  leaderId    Int?
+  leader      Personnel? @relation("GroupLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  members     KpiGroupMember[]
+  kpiSettings KpiSetting[]
+
+  @@map("kpi_groups")
+}
+
+model KpiGroupMember {
+  groupId     Int
+  group       KpiGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  personnelId Int
+  personnel   Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  roleInGroup String    @default("member")
+  joinedAt    DateTime  @default(now())
+
+  @@id([groupId, personnelId])
+  @@index([personnelId])
+  @@map("kpi_group_members")
+}
+
+model KpiSetting {
+  id                  Int                    @id @default(autoincrement())
+  code                String
+  name                String
+  description         String?
+  unit                String
+  customUnitLabel     String?
+  scopeType           String
+  groupId             Int?
+  group               KpiGroup?              @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  assignedPersonnelId Int?
+  assignedPersonnel   Personnel?             @relation("IndividualKpis", fields: [assignedPersonnelId], references: [id], onDelete: SetNull)
+  activityTypeId      Int?
+  activityType        PersonnelActivityType? @relation(fields: [activityTypeId], references: [id], onDelete: SetNull)
+  period              String
+  targetValue         Decimal                @db.Decimal(15, 2)
+  minThreshold        Decimal?               @db.Decimal(15, 2)
+  weight              Decimal                @db.Decimal(5, 2)
+  bonusIncentive      Json?
+  status              String                 @default("active")
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  @@index([activityTypeId, period, status])
+  @@index([groupId, period, status])
+  @@index([scopeType, status, period])
+  @@map("kpi_settings")
+}
+
+model OperationalMetric {
+  id          String    @id @default(uuid()) @db.Uuid
+  personnelId Int
+  personnel   Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  period      String
+  metricCode  String
+  actualValue Decimal   @db.Decimal(15, 2)
+  source      String?
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([personnelId, period, metricCode])
+  @@index([personnelId, period])
+  @@map("operational_metrics")
+}
+
+model Criterion {
+  id            Int     @id @default(autoincrement())
+  code          String  @unique
+  name          String
+  maxScore      Decimal @db.Decimal(5, 2)
+  weight        Decimal @db.Decimal(5, 2)
+  description   String?
+  priorityOrder Int     @default(1)
+
+  scoreItems ScoreRecordItem[]
+
+  @@map("criteria")
+}
+
+model ScoreRecord {
+  id             String    @id @default(uuid()) @db.Uuid
+  personnelId    Int
+  personnel      Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  period         String
+  totalScore     Decimal   @db.Decimal(6, 2)
+  averageScore   Decimal   @db.Decimal(5, 2)
+  evaluatorNotes String?
+  evaluatedAt    DateTime  @default(now())
+
+  scoreItems ScoreRecordItem[]
+
+  @@unique([personnelId, period])
+  @@index([personnelId, period])
+  @@map("score_records")
+}
+
+model ScoreRecordItem {
+  id            Int         @id @default(autoincrement())
+  scoreRecordId String      @db.Uuid
+  scoreRecord   ScoreRecord @relation(fields: [scoreRecordId], references: [id], onDelete: Cascade)
+  criterionId   Int
+  criterion     Criterion   @relation(fields: [criterionId], references: [id], onDelete: Restrict)
+  score         Decimal     @db.Decimal(5, 2)
+
+  @@unique([scoreRecordId, criterionId])
+  @@map("score_record_items")
+}
+
+// ==========================================
+// 5. CẤU HÌNH HỆ THỐNG & TRA CỨU
+// ==========================================
+
+model AppSetting {
+  id                    String  @id @default("global_settings")
+  referenceYear         Int     @default(2026)
+  referenceDate         String?
+  referenceTime         String?  // HH:mm. Khi referenceDate được cấu hình, đây là giờ nghiệp vụ chuẩn.
+  referenceClockAnchorAt DateTime? // Thời điểm thực bắt đầu chạy đồng hồ giả lập từ referenceDate/referenceTime.
+  brandName             String?
+  brandTagline          String?
+  brandLogoUrl          String?
+  tieBreakerEnabled     Boolean @default(true)
+  tieBreakerCriteriaIds Json    @default("[]")
+  scoreCalculationMode  String  @default("sum")
+  departmentParentMap   Json    @default("{}")
+  departmentLeaders     Json    @default("{}")
+
+  @@map("app_settings")
+}
+
+model SystemLookup {
+  id         Int      @id @default(autoincrement())
+  type       String
+  value      String
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@unique([type, value])
+  @@index([type, orderIndex])
+  @@map("system_lookups")
+}
+
+// ==========================================
+// 6. PHÂN HỆ QUẢN LÝ DOANH THU & ĐỐI SOÁT (REVENUE)
+// ==========================================
+
+model RevenueCategory {
+  id                   Int      @id @default(autoincrement())
+  code                 String   @unique
+  name                 String
+  description          String?
+  defaultIdolShareRate Decimal  @default(70.0) @db.Decimal(5, 2)
+  color                String?  @default("rose")
+  icon                 String?  @default("DollarSign")
+  isActive             Boolean  @default(true)
+  displayOrder         Int      @default(1)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  transactions RevenueTransaction[]
+
+  @@map("revenue_categories")
+}
+
+model RevenuePlatform {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique
+  name           String
+  defaultFeeRate Decimal  @default(0.0) @db.Decimal(5, 2)
+  feeType        String   @default("percentage")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  transactions RevenueTransaction[]
+
+  @@map("revenue_platforms")
+}
+
+model RevenueTransaction {
+  id                  String          @id @default(uuid()) @db.Uuid
+  transactionCode     String          @unique
+  personnelId         Int
+  personnel           Personnel       @relation(fields: [personnelId], references: [id], onDelete: Restrict)
+  period              String // YYYY-MM
+  transactionDate     DateTime        @db.Date
+  categoryId          Int
+  category            RevenueCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  platformId          Int
+  platform            RevenuePlatform @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  title               String
+  contractRef         String?
+  payoutMode          String          @default("percentage") // "percentage" | "fixed" | "hybrid"
+  grossAmount         Decimal         @default(0) @db.Decimal(15, 2)
+  totalDeductions     Decimal         @default(0) @db.Decimal(15, 2)
+  netAmount           Decimal         @default(0) @db.Decimal(15, 2)
+  idolShareRate       Decimal         @default(70.0) @db.Decimal(5, 2) // CÓ THỂ CHỈNH SỬA TÙY BIẾN
+  fixedPayoutAmount   Decimal         @default(0) @db.Decimal(15, 2)
+  idolPayoutAmount    Decimal         @default(0) @db.Decimal(15, 2)
+  companyProfitAmount Decimal         @default(0) @db.Decimal(15, 2)
+  rateOverrideReason  String?
+  status              String          @default("draft") // "draft" | "verified" | "synced_to_payroll" | "cancelled"
+  proofUrl            String?
+  notes               String?
+  createdById         Int?
+  createdBy           UserAccount?    @relation("RevenueCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedById        Int?
+  approvedBy          UserAccount?    @relation("RevenueApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  syncedAt            DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  deductions RevenueDeductionItem[]
+  serviceUsageRecords ServiceUsageRecord[]
+
+  @@index([personnelId, period])
+  @@index([period, status])
+  @@map("revenue_transactions")
+}
+
+model RevenueDeductionItem {
+  id            String             @id @default(uuid()) @db.Uuid
+  transactionId String             @db.Uuid
+  transaction   RevenueTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  name          String
+  deductionType String             @default("platform_fee") // "platform_fee" | "production_cost" | "tax" | "other"
+  amount        Decimal            @default(0) @db.Decimal(15, 2)
+  proofUrl      String?
+  createdAt     DateTime           @default(now())
+
+  @@index([transactionId])
+  @@map("revenue_deduction_items")
+}
+
+// ==========================================
+// 7. PHÂN HỆ QUẢN LÝ CHI PHÍ DOANH NGHIỆP (COMPANY EXPENSES)
+// ==========================================
+
+model CompanyExpense {
+  id            String       @id @default(uuid()) @db.Uuid
+  expenseCode   String       @unique
+  period        String // YYYY-MM
+  expenseDate   DateTime     @db.Date
+  category      String // "LABOR_INSURANCE" | "FACILITY" | "INVESTMENT_CAPEX" | "OPERATIONS_OPEX" | "DYNAMIC_EVENT" | "OTHER"
+  categoryLabel String? // Nhãn tiếng Việt
+  title         String
+  amount        Decimal      @default(0) @db.Decimal(15, 2)
+  facilityType  String? // "fixed" (mặt bằng cố định) | "rented" (thuê) | null
+  paymentMethod String       @default("bank_transfer") // "bank_transfer" | "cash"
+  recipient     String? // Đơn vị thụ hưởng
+  invoiceRef    String? // Số hóa đơn / hợp đồng
+  proofUrl      String? // Ảnh biên lai / chứng từ
+  status        String       @default("paid") // "pending" | "approved" | "paid" | "cancelled"
+  notes         String?
+  createdById   Int?
+  createdBy     UserAccount? @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([period, category])
+  @@index([period, status])
+  @@index([expenseDate])
+  @@map("company_expenses")
+}
+
+model AuditLog {
+  id          String       @id @default(uuid()) @db.Uuid
+  requestId   String       @unique
+  actorUserId Int?
+  actorUser   UserAccount? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  method      String
+  path        String
+  action      String
+  resource    String
+  resourceId  String?
+  statusCode  Int
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([resource, resourceId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

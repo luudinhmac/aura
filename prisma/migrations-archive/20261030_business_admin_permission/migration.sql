@@ -1,0 +1,2 @@
+ALTER TABLE "users"
+  ADD COLUMN "isBusinessAdmin" BOOLEAN NOT NULL DEFAULT false;
